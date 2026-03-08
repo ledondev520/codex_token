@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Codex 本地消耗看板</title>
+    <link rel="icon" href="data:," />
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div class="page-shell">
+      <header class="hero">
+        <div class="hero-copy">
+          <p class="eyebrow">Codex 本地消耗与限制监控</p>
+          <h1>本地用量驾驶舱</h1>
+          <p class="hero-text">
+            只读取你本机 <code>~/.codex</code> 的 SQLite 与 session 日志，展示
+            token 消耗、限制窗口、模型名称、单价与费用估算。
+          </p>
+        </div>
+        <div class="hero-status">
+          <div class="status-chip">
+            <span class="status-dot" id="live-dot"></span>
+            <span id="live-status">连接中</span>
+          </div>
+          <p id="generated-at" class="meta-line">等待第一份快照</p>
+          <p id="source-home" class="meta-line"></p>
+        </div>
+      </header>
+
+      <main class="dashboard-grid">
+        <section class="panel span-12">
+          <div class="section-heading">
+            <span>总览</span>
+            <small>统一以 M 表示百万 token</small>
+          </div>
+          <div class="metric-grid metric-grid-five">
+            <article class="metric-card">
+              <span class="metric-label">历史总消耗</span>
+              <strong class="metric-value" id="total-tokens">-</strong>
+              <span class="metric-subvalue metric-subvalue-muted" id="total-tokens-raw">-</span>
+            </article>
+            <article class="metric-card">
+              <span class="metric-label">当前线程数</span>
+              <strong class="metric-value" id="total-threads">-</strong>
+              <span class="metric-subvalue metric-subvalue-muted">未归档会话</span>
+            </article>
+            <article class="metric-card accent-card">
+              <span class="metric-label">当前会话消耗</span>
+              <strong class="metric-value" id="current-session-tokens">-</strong>
+              <span class="metric-subvalue" id="current-session-last">最近一次 -</span>
+            </article>
+            <article class="metric-card bill-card">
+              <span class="metric-label">累计估算费用</span>
+              <strong class="metric-value" id="total-estimated-cost">-</strong>
+              <span class="metric-subvalue metric-subvalue-muted">按所有 `last_token_usage` 逐笔累加</span>
+            </article>
+            <article class="metric-card cost-card">
+              <span class="metric-label">当前模型</span>
+              <strong class="metric-value" id="current-model-name">-</strong>
+              <span class="metric-subvalue" id="current-model-cost">当前会话费用 -</span>
+            </article>
+          </div>
+        </section>
+
+        <section class="panel span-12">
+          <div class="section-heading">
+            <span>限制窗口</span>
+            <small>本地日志中最近一次出现的限制快照</small>
+          </div>
+          <div class="limit-grid">
+            <article class="quota-card">
+              <div class="quota-topline">
+                <span id="primary-label">5小时窗口</span>
+                <strong id="primary-percent">-</strong>
+              </div>
+              <div class="quota-bar"><div id="primary-bar"></div></div>
+              <p class="quota-meta" id="primary-remaining">剩余 -</p>
+              <p class="quota-meta" id="primary-reset">等待快照</p>
+            </article>
+            <article class="quota-card">
+              <div class="quota-topline">
+                <span id="secondary-label">7天窗口</span>
+                <strong id="secondary-percent">-</strong>
+              </div>
+              <div class="quota-bar"><div id="secondary-bar"></div></div>
+              <p class="quota-meta" id="secondary-remaining">剩余 -</p>
+              <p class="quota-meta" id="secondary-reset">等待快照</p>
+            </article>
+            <article class="quota-card quota-meta-card">
+              <div class="quota-topline">
+                <span>账户限制信息</span>
+                <strong id="plan-type">未知</strong>
+              </div>
+              <p class="quota-meta" id="credits-status">等待快照</p>
+              <p class="quota-meta" id="rate-limit-source">限制来源 -</p>
+            </article>
+          </div>
+
+          <div class="detail-grid">
+            <article class="panel inset-panel">
+              <div class="section-heading compact-heading">
+                <span>当前会话账单明细</span>
+                <small>这是当前会话累计，不是全局累计</small>
+              </div>
+              <div class="cost-breakdown" id="cost-breakdown">
+                <div class="cost-row">
+                  <span>等待数据</span>
+                </div>
+              </div>
+            </article>
+            <article class="panel inset-panel">
+              <div class="section-heading compact-heading">
+                <span>模型价格表</span>
+                <small>从本地日志提取模型，再匹配单价</small>
+              </div>
+              <div id="pricing-table" class="pricing-table empty-state">
+                等待数据
+              </div>
+            </article>
+          </div>
+        </section>
+
+        <section class="panel span-5">
+          <div class="section-heading">
+            <span>每日账单走势</span>
+            <small>折线图 + 每日明细账单</small>
+          </div>
+          <div class="daily-chart-summary">
+            <div class="summary-pill">
+              <span>累计估算费用</span>
+              <strong id="daily-total-cost">-</strong>
+            </div>
+            <div class="summary-pill">
+              <span>最近一天</span>
+              <strong id="latest-daily-cost">-</strong>
+            </div>
+          </div>
+          <div class="chart-grid">
+            <article class="line-chart-card">
+              <div class="chart-card-head">
+                <span>每日 Token 折线图</span>
+                <strong id="token-chart-peak">-</strong>
+              </div>
+              <div id="token-chart" class="line-chart-shell">等待数据</div>
+            </article>
+            <article class="line-chart-card">
+              <div class="chart-card-head">
+                <span>每日费用折线图</span>
+                <strong id="cost-chart-peak">-</strong>
+              </div>
+              <div id="cost-chart" class="line-chart-shell">等待数据</div>
+            </article>
+          </div>
+          <div id="daily-ledger" class="daily-ledger empty-state">等待数据</div>
+        </section>
+
+        <section class="panel span-7">
+          <div class="section-heading">
+            <span>最近会话</span>
+            <small>模型、消耗、费用估算与更新时间</small>
+          </div>
+          <div class="table-scroll">
+            <table>
+              <thead>
+                <tr>
+                  <th>标题</th>
+                  <th>模型</th>
+                  <th>消耗</th>
+                  <th>费用</th>
+                  <th>更新时间</th>
+                </tr>
+              </thead>
+              <tbody id="recent-threads">
+                <tr>
+                  <td colspan="5" class="empty-row">等待数据</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <script src="/app.js"></script>
+  </body>
+</html>

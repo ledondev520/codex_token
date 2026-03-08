@@ -1,0 +1,2854 @@
+diff --git a/PLAN.md b/PLAN.md
+new file mode 100644
+index 0000000..365c615
+--- /dev/null
++++ b/PLAN.md
+@@ -0,0 +1,38 @@
++# Codex Usage Dashboard Plan
++
++Last updated: 2026-03-08 13:53 Asia/Shanghai
++
++## Goal
++
++Build a standalone local web dashboard in this workspace that reads `~/.codex` usage data, shows token consumption and quota snapshots, and updates automatically without requiring cloud access.
++
++## Milestones
++
++1. Confirm local data sources for token usage and rate limits.
++2. Build a Node.js backend that aggregates SQLite + session JSONL data. Completed.
++3. Build a local frontend dashboard with live refresh. Completed.
++4. Verify tests, startup flow, and browser behavior. Completed.
++
++## Architecture
++
++- Backend: Node.js HTTP server with Express, SQLite reader, session JSONL reader, and SSE streaming.
++- Frontend: static HTML/CSS/JS served by the backend.
++- Data sources:
++  - `~/.codex/state_5.sqlite`
++  - `~/.codex/sessions/**/*.jsonl`
++  - `~/.codex/archived_sessions/**/*.jsonl`
++- Pricing: official OpenAI model pricing where an exact match exists, with explicit alias-based fallback for models such as `gpt-5.3-codex-spark`.
++
++## Risks
++
++- Rate-limit data appears as snapshots with percentages and reset timestamps, but absolute quota totals may not exist locally.
++- Session logs can be large, so parsing must be scoped to recent files and cached.
++- Live filesystem watching may behave differently across platforms; polling fallback is required.
++
++## Mitigations
++
++- Present quota as "usage percent + reset time + plan type" when hard totals are unavailable.
++- Use SQLite for historical aggregates and only parse a bounded set of recent session files for live details.
++- Use periodic refresh in the server and SSE on the client.
++- Fall back to the most recent non-null rate-limit snapshot when the newest session event omits quota data.
++- Merge per-thread token/model/limit fields by timestamp so newer partial files do not wipe older non-null snapshots.
+diff --git a/TASKS.md b/TASKS.md
+new file mode 100644
+index 0000000..64f87bf
+--- /dev/null
++++ b/TASKS.md
+@@ -0,0 +1,13 @@
++# Tasks
++
++Last updated: 2026-03-08 13:53 Asia/Shanghai
++
++| ID | Priority | Est | Slot | Status | Task | Input | Output | Validation | DoD |
++| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
++| T1 | P0 | 10m | 1 | DONE | Confirm local Codex data sources | `~/.codex` files | source inventory | manual inspection | exact local files/fields identified |
++| T2 | P0 | 15m | 1 | DONE | Create project scaffold and test harness | empty workspace | runnable app skeleton | `npm test` | tests execute in workspace |
++| T3 | P0 | 20m | 1 | DONE | Implement usage aggregation service | SQLite + JSONL | normalized snapshot API | `npm test` | snapshot parser and SQL summary covered |
++| T4 | P0 | 20m | 1 | DONE | Implement server + SSE | service layer | local HTTP app | `npm test` and manual startup | `/api/snapshot` and `/api/stream` work |
++| T5 | P1 | 20m | 1 | DONE | Implement frontend dashboard | API endpoints | local dashboard UI | browser check | key usage/quota views render and auto-refresh |
++| T6 | P0 | 15m | 1 | DONE | Final verification and evidence files | full app | results/metrics | `npm test`, startup smoke | evidence recorded |
++| T7 | P0 | 20m | 1 | DONE | Add model pricing, cost estimate, Chinese UI, and M-unit formatting | session model fields + OpenAI pricing | enriched dashboard | `npm test` and browser smoke | model/cost/limits visible and layout stable |
+diff --git a/RISKS.md b/RISKS.md
+new file mode 100644
+index 0000000..4c2e489
+--- /dev/null
++++ b/RISKS.md
+@@ -0,0 +1,9 @@
++# Risks
++
++Last updated: 2026-03-08 12:10 Asia/Shanghai
++
++| ID | Risk | Trigger | Mitigation | Rollback |
++| --- | --- | --- | --- | --- |
++| R1 | No absolute quota totals available locally | session logs only expose percentages | show percentages, reset times, plan type, and clearly label missing hard caps | omit hard-cap widgets |
++| R2 | Session JSONL parsing is expensive | many archived sessions or large files | parse recent files first, cache results, expose refresh interval | disable live details and keep SQLite-only view |
++| R3 | File watching misses updates | OS-specific watcher behavior | use timed refresh plus SSE | revert to client polling only |
+diff --git a/METRICS.md b/METRICS.md
+new file mode 100644
+index 0000000..fcd84aa
+--- /dev/null
++++ b/METRICS.md
+@@ -0,0 +1,19 @@
++# Metrics
++
++Last updated: 2026-03-08 18:00 Asia/Shanghai
++
++| Round | Metric | Value | Notes |
++| --- | --- | --- | --- |
++| 0 | Source coverage | 2 primary stores identified | SQLite threads + session JSONL token events |
++| 0 | Verified local live token field | yes | session `event_msg.payload.info.total_token_usage` |
++| 0 | Verified local quota field | yes | session `event_msg.payload.rate_limits` |
++| 1 | Automated tests | 3 passing | `npm test` on 2026-03-08 12:14 Asia/Shanghai |
++| 1 | Browser smoke test | pass | local page rendered live values at `http://127.0.0.1:4318` |
++| 1 | Browser console errors | 0 | after favicon fix |
++| 2 | Automated tests | 3 passing | `npm test` on 2026-03-08 13:52 Asia/Shanghai after pricing/UI changes |
++| 2 | Model pricing | enabled | current session model, price source, and USD estimate shown |
++| 2 | UI localization | complete | all primary user-facing copy is Chinese |
++| 2 | Token unit format | complete | dashboard values switched to M (million tokens) |
++| 3 | Daily ledger | enabled | daily token + daily USD estimated from `last_token_usage` |
++| 3 | Line charts | enabled | separate token/cost SVG line charts |
++| 3 | Pricing table | enabled | logs-derived models with displayed unit prices |
+diff --git a/package.json b/package.json
+new file mode 100644
+index 0000000..860c8d7
+--- /dev/null
++++ b/package.json
+@@ -0,0 +1,11 @@
++{
++  "name": "codex-usage-dashboard",
++  "version": "0.1.0",
++  "private": true,
++  "description": "Standalone local dashboard for Codex token usage and quota snapshots.",
++  "scripts": {
++    "start": "node server/index.js",
++    "dev": "node --watch server/index.js",
++    "test": "node --test"
++  }
++}
+diff --git a/RESULTS/dashboard.md b/RESULTS/dashboard.md
+new file mode 100644
+index 0000000..2047848
+--- /dev/null
++++ b/RESULTS/dashboard.md
+@@ -0,0 +1,53 @@
++# Dashboard Result
++
++Date: 2026-03-08 18:00 Asia/Shanghai
++
++## Deliverable
++
++A standalone local web dashboard was built in this workspace. It reads:
++
++- `~/.codex/state_5.sqlite`
++- `~/.codex/sessions/**/*.jsonl`
++- `~/.codex/archived_sessions/**/*.jsonl`
++
++It exposes:
++
++- `GET /api/snapshot`
++- `GET /api/stream`
++- `GET /`
++
++## What the UI shows
++
++- Historical total tokens and open threads from SQLite.
++- Current session total tokens and last-turn tokens from the latest session event.
++- Most recent non-null quota snapshot with 5-hour/7-day style windows, remaining percentages, reset times, and plan type.
++- Current session model name, unit prices, and estimated USD cost.
++- Cumulative estimated cost across all parsed `last_token_usage` events.
++- All token displays normalized to `M` (million tokens).
++- Chinese localized interface copy.
++- Daily token totals.
++- Daily token and daily cost line charts.
++- Daily ledger rows with token/cost per date.
++- Recent thread table with model, token M-value, estimated cost, update time, and workspace.
++- A pricing table built from models discovered in local logs.
++
++## Validation
++
++- Automated: `npm test` -> 3 passing tests after model/pricing/UI updates.
++- Manual: local server started with `node server/index.js`.
++- Browser: page verified at `http://127.0.0.1:4318`.
++- Screenshot evidence: `var/folders/m7/nvwypzm13hs3yj_yzr3173dr0000gn/T/playwright-mcp-output/1772943114526/page-2026-03-08T09-59-28-349Z.png`
++- Browser console: 0 errors after adding a favicon data URL.
++
++## Pricing notes
++
++- Exact model prices are sourced from official OpenAI pricing/model pages where available.
++- If a local model name is an alias such as `gpt-5.3-codex-spark`, the dashboard falls back to the nearest official base model price and labels that as inferred.
++- The cumulative total fee is now separated from the current-session fee to avoid mixing the two concepts.
++
++## Runbook
++
++```bash
++npm test
++node server/index.js
++```
+diff --git a/docs/plans/2026-03-08-codex-usage-dashboard.md b/docs/plans/2026-03-08-codex-usage-dashboard.md
+new file mode 100644
+index 0000000..8d31286
+--- /dev/null
++++ b/docs/plans/2026-03-08-codex-usage-dashboard.md
+@@ -0,0 +1,145 @@
++# Codex Usage Dashboard Implementation Plan
++
++> **For Codex:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
++
++**Goal:** Build a standalone local dashboard that visualizes Codex token usage, rate-limit snapshots, and recent session activity from `~/.codex`.
++
++**Architecture:** The app uses a small Node.js server to read SQLite history and recent session JSONL files, then serves a static frontend with SSE-based live updates. Historical totals come from SQLite; near-real-time token and quota detail come from recent session event streams.
++
++**Tech Stack:** Node.js, Express, better-sqlite3, native test runner, static HTML/CSS/JS, SSE
++
++---
++
++### Task 1: Scaffold project and checkpoints
++
++**Files:**
++- Create: `package.json`
++- Create: `server/index.js`
++- Create: `server/app.js`
++- Create: `PLAN.md`
++- Create: `TASKS.md`
++- Create: `RISKS.md`
++- Create: `METRICS.md`
++
++**Step 1: Write the failing test**
++
++Create a test that imports the future usage service and expects a normalized snapshot object.
++
++**Step 2: Run test to verify it fails**
++
++Run: `npm test`
++Expected: FAIL because service module does not exist yet.
++
++**Step 3: Write minimal implementation**
++
++Add package metadata and empty server bootstrap.
++
++**Step 4: Run test to verify it passes**
++
++Run: `npm test`
++Expected: tests execute and import resolves.
++
++### Task 2: Aggregate SQLite and JSONL usage
++
++**Files:**
++- Create: `server/lib/codexPaths.js`
++- Create: `server/lib/usageRepository.js`
++- Test: `test/usageRepository.test.js`
++
++**Step 1: Write the failing test**
++
++Test normalization for:
++- thread totals from SQLite-like rows
++- latest token snapshot from session JSONL
++- latest rate-limit snapshot
++
++**Step 2: Run test to verify it fails**
++
++Run: `npm test`
++Expected: FAIL because repository functions are missing.
++
++**Step 3: Write minimal implementation**
++
++Implement path resolution, SQL queries, and JSONL event parsing.
++
++**Step 4: Run test to verify it passes**
++
++Run: `npm test`
++Expected: PASS for repository tests.
++
++### Task 3: Expose HTTP and live stream endpoints
++
++**Files:**
++- Create: `server/lib/liveSnapshotService.js`
++- Modify: `server/app.js`
++- Test: `test/app.test.js`
++
++**Step 1: Write the failing test**
++
++Test `GET /api/snapshot` and SSE connection response headers.
++
++**Step 2: Run test to verify it fails**
++
++Run: `npm test`
++Expected: FAIL because routes are missing.
++
++**Step 3: Write minimal implementation**
++
++Add snapshot endpoint, stream endpoint, and timed refresh broadcast.
++
++**Step 4: Run test to verify it passes**
++
++Run: `npm test`
++Expected: PASS for API tests.
++
++### Task 4: Build dashboard UI
++
++**Files:**
++- Create: `public/index.html`
++- Create: `public/styles.css`
++- Create: `public/app.js`
++
++**Step 1: Write the failing test**
++
++Test frontend bootstrap helpers that map API payloads into dashboard cards.
++
++**Step 2: Run test to verify it fails**
++
++Run: `npm test`
++Expected: FAIL because formatter helpers do not exist.
++
++**Step 3: Write minimal implementation**
++
++Implement cards, charts/bars, tables, and SSE refresh behavior.
++
++**Step 4: Run test to verify it passes**
++
++Run: `npm test`
++Expected: PASS and dashboard loads in browser.
++
++### Task 5: Verify and capture evidence
++
++**Files:**
++- Create: `RESULTS/dashboard.md`
++- Create: `PATCHES/dashboard.diff`
++- Modify: `TASKS.md`
++- Modify: `METRICS.md`
++
++**Step 1: Run verification**
++
++Run:
++- `npm test`
++- `node server/index.js`
++
++**Step 2: Manual smoke test**
++
++Open the dashboard and confirm:
++- current session token total
++- recent sessions list
++- daily totals
++- latest quota snapshot and reset time
++- live refresh without reload
++
++**Step 3: Record evidence**
++
++Save results summary and diff snapshot.
+diff --git a/logs/task-t2.md b/logs/task-t2.md
+new file mode 100644
+index 0000000..3fa4750
+--- /dev/null
++++ b/logs/task-t2.md
+@@ -0,0 +1,9 @@
++# Task T2 Log
++
++- 2026-03-08 12:10: Created workspace checkpoint files and implementation plan.
++- 2026-03-08 12:11: Added failing tests for repository, API, and frontend formatting.
++- 2026-03-08 12:13: Implemented SQLite + JSONL aggregation, HTTP server, SSE stream, and dashboard UI.
++- 2026-03-08 12:14: Verified tests, browser rendering, and clean console.
++- 2026-03-08 13:52: Added model extraction, OpenAI pricing map, USD cost estimation, richer limit cards, Chinese UI, and M-unit formatting.
++- 2026-03-08 13:52: Re-verified tests and browser screenshot after layout fixes.
++- 2026-03-08 17:59: Added daily ledger aggregation from `last_token_usage`, dual line charts, cumulative fee card, and logs-derived model pricing table.
+diff --git a/public/app.js b/public/app.js
+new file mode 100644
+index 0000000..59561b5
+--- /dev/null
++++ b/public/app.js
+@@ -0,0 +1,379 @@
++(function bootstrap(globalScope) {
++  function formatTokenMillions(value) {
++    const tokenValue = Number(value || 0);
++    const inMillions = tokenValue / 1_000_000;
++
++    if (inMillions === 0) {
++      return "0M";
++    }
++
++    if (inMillions >= 10 && Number.isInteger(inMillions)) {
++      return `${inMillions}M`;
++    }
++
++    if (inMillions >= 10) {
++      return `${inMillions.toFixed(1).replace(/\.0$/, "")}M`;
++    }
++
++    return `${inMillions.toFixed(2).replace(/\.00$/, "")}M`;
++  }
++
++  function formatTokenRaw(value) {
++    return Number(value || 0).toLocaleString("en-US");
++  }
++
++  function formatPercent(value) {
++    if (value === null || value === undefined) {
++      return "-";
++    }
++
++    return `${Number(value).toFixed(0)}%`;
++  }
++
++  function formatResetTime(unixSeconds) {
++    if (!unixSeconds) {
++      return "重置时间不可用";
++    }
++
++    return new Date(unixSeconds * 1000).toLocaleString("zh-CN", {
++      year: "numeric",
++      month: "2-digit",
++      day: "2-digit",
++      hour: "2-digit",
++      minute: "2-digit",
++    });
++  }
++
++  function formatUsd(value) {
++    if (value === null || value === undefined) {
++      return "-";
++    }
++
++    return `$${Number(value).toFixed(4)}`;
++  }
++
++  function clampPercent(value) {
++    return `${Math.max(0, Math.min(100, Number(value || 0)))}%`;
++  }
++
++  function escapeHtml(value) {
++    return String(value)
++      .replaceAll("&", "&amp;")
++      .replaceAll("<", "&lt;")
++      .replaceAll(">", "&gt;")
++      .replaceAll('"', "&quot;")
++      .replaceAll("'", "&#39;");
++  }
++
++  function buildLineChartMarkup(rows, options) {
++    if (!rows.length) {
++      return "没有数据";
++    }
++
++    const chronologicalRows = [...rows].reverse();
++    const maxValue = Math.max(...chronologicalRows.map((row) => row[options.field]), 0.0001);
++    const pointGap = chronologicalRows.length > 1 ? 100 / (chronologicalRows.length - 1) : 100;
++    const points = chronologicalRows
++      .map(
++        (row, index) =>
++          `${index * pointGap},${100 - Math.max(6, (row[options.field] / maxValue) * 88)}`
++      )
++      .join(" ");
++
++    return `
++      <svg viewBox="0 0 100 100" preserveAspectRatio="none" class="line-chart">
++        <line x1="0" y1="88" x2="100" y2="88" class="chart-axis"></line>
++        <polyline points="${points}" class="chart-line ${options.lineClass || ""}"></polyline>
++      </svg>
++      <div class="chart-legend">
++        <span>${chronologicalRows[0].day} -> ${chronologicalRows[chronologicalRows.length - 1].day}</span>
++        <strong>峰值 ${options.formatter(maxValue)}</strong>
++      </div>
++    `;
++  }
++
++  function renderDailyUsage(snapshot) {
++    const tokenChartContainer = document.getElementById("token-chart");
++    const costChartContainer = document.getElementById("cost-chart");
++    const ledgerContainer = document.getElementById("daily-ledger");
++    const rows = snapshot.dailyLedger || [];
++
++    if (!rows.length) {
++      tokenChartContainer.innerHTML = "没有每日账单数据";
++      costChartContainer.innerHTML = "没有每日账单数据";
++      ledgerContainer.innerHTML = "没有每日账单明细";
++      tokenChartContainer.className = "line-chart-shell empty-state";
++      costChartContainer.className = "line-chart-shell empty-state";
++      ledgerContainer.className = "daily-ledger empty-state";
++      document.getElementById("daily-total-cost").textContent = "-";
++      document.getElementById("latest-daily-cost").textContent = "-";
++      document.getElementById("token-chart-peak").textContent = "-";
++      document.getElementById("cost-chart-peak").textContent = "-";
++      return;
++    }
++
++    tokenChartContainer.className = "line-chart-shell";
++    costChartContainer.className = "line-chart-shell";
++    tokenChartContainer.innerHTML = buildLineChartMarkup(rows, {
++      field: "totalTokens",
++      formatter: formatTokenMillions,
++      lineClass: "chart-line-token",
++    });
++    costChartContainer.innerHTML = buildLineChartMarkup(rows, {
++      field: "totalUsd",
++      formatter: formatUsd,
++      lineClass: "chart-line-cost",
++    });
++
++    ledgerContainer.className = "daily-ledger";
++    ledgerContainer.innerHTML = rows
++      .map(
++        (row) => `
++          <div class="ledger-row">
++            <span>${row.day}</span>
++            <strong>${formatTokenMillions(row.totalTokens)}</strong>
++            <strong>${formatUsd(row.totalUsd)}</strong>
++          </div>
++        `
++      )
++      .join("");
++
++    document.getElementById("daily-total-cost").textContent = formatUsd(
++      snapshot.overview.totalEstimatedCost
++    );
++    document.getElementById("latest-daily-cost").textContent = formatUsd(rows[0].totalUsd);
++    document.getElementById("token-chart-peak").textContent = `峰值 ${formatTokenMillions(
++      Math.max(...rows.map((row) => row.totalTokens), 0)
++    )}`;
++    document.getElementById("cost-chart-peak").textContent = `峰值 ${formatUsd(
++      Math.max(...rows.map((row) => row.totalUsd), 0)
++    )}`;
++  }
++
++  function renderRecentThreads(snapshot) {
++    const tableBody = document.getElementById("recent-threads");
++    const rows = snapshot.recentThreads || [];
++
++    if (!rows.length) {
++      tableBody.innerHTML = '<tr><td colspan="5" class="empty-row">没有最近会话</td></tr>';
++      return;
++    }
++
++    tableBody.innerHTML = rows
++      .map(
++        (thread) => `
++          <tr>
++            <td>
++              <span class="thread-title">${escapeHtml(thread.title || "(untitled)")}</span>
++              <span class="thread-meta">${escapeHtml(thread.cwd || "-")}</span>
++            </td>
++            <td>${escapeHtml(thread.modelName || "未知模型")}</td>
++            <td>${formatTokenMillions(thread.tokensUsed)}</td>
++            <td>${thread.cost ? formatUsd(thread.cost.totalUsd) : "-"}</td>
++            <td>${formatResetTime(thread.updatedAt)}</td>
++          </tr>
++        `
++      )
++      .join("");
++  }
++
++  function renderCostBreakdown(currentSession) {
++    const container = document.getElementById("cost-breakdown");
++    const cost = currentSession?.cost;
++
++    if (!currentSession || !cost) {
++      container.innerHTML =
++        '<div class="cost-row single-row"><span>当前模型没有匹配到价格，无法估算费用</span></div>';
++      return;
++    }
++
++    container.innerHTML = `
++      <div class="cost-row">
++        <span>输入 token</span>
++        <strong>${formatTokenMillions(currentSession.inputTokens)}</strong>
++        <span class="cost-meta">$${cost.inputPerMillion}/M</span>
++        <strong>${formatUsd(cost.inputUsd)}</strong>
++      </div>
++      <div class="cost-row">
++        <span>缓存输入</span>
++        <strong>${formatTokenMillions(currentSession.cachedInputTokens)}</strong>
++        <span class="cost-meta">$${cost.cachedInputPerMillion ?? "-"}/M</span>
++        <strong>${formatUsd(cost.cachedInputUsd)}</strong>
++      </div>
++      <div class="cost-row">
++        <span>输出 token</span>
++        <strong>${formatTokenMillions(currentSession.outputTokens)}</strong>
++        <span class="cost-meta">$${cost.outputPerMillion}/M</span>
++        <strong>${formatUsd(cost.outputUsd)}</strong>
++      </div>
++      <div class="cost-row total-row">
++        <span>估算总费用</span>
++        <strong>${formatUsd(cost.totalUsd)}</strong>
++      </div>
++    `;
++  }
++
++  function renderPricingCatalog(snapshot) {
++    const container = document.getElementById("pricing-table");
++    const rows = snapshot.pricingCatalog || [];
++
++    if (!rows.length) {
++      container.className = "pricing-table empty-state";
++      container.textContent = "没有识别到模型价格";
++      return;
++    }
++
++    container.className = "pricing-table";
++    container.innerHTML = `
++      <div class="pricing-head">
++        <span>模型</span>
++        <span>输入</span>
++        <span>缓存输入</span>
++        <span>输出</span>
++      </div>
++      ${rows
++        .map(
++          (row) => `
++            <div class="pricing-row">
++              <div>
++                <strong>${escapeHtml(row.modelName)}</strong>
++                <span class="pricing-source-note">${escapeHtml(row.sourceLabel || "-")}</span>
++              </div>
++              <strong>${row.inputPerMillion == null ? "-" : `$${row.inputPerMillion}/M`}</strong>
++              <strong>${row.cachedInputPerMillion == null ? "-" : `$${row.cachedInputPerMillion}/M`}</strong>
++              <strong>${row.outputPerMillion == null ? "-" : `$${row.outputPerMillion}/M`}</strong>
++            </div>
++          `
++        )
++        .join("")}
++    `;
++  }
++
++  function renderSnapshot(snapshot) {
++    document.getElementById("generated-at").textContent = `最近更新 ${new Date(
++      snapshot.generatedAt
++    ).toLocaleString("zh-CN")}`;
++    document.getElementById("source-home").textContent = snapshot.sources.codexHome;
++    document.getElementById("total-tokens").textContent = formatTokenMillions(snapshot.overview.totalTokens);
++    document.getElementById("total-tokens-raw").textContent = `${formatTokenRaw(
++      snapshot.overview.totalTokens
++    )} tokens`;
++    document.getElementById("total-threads").textContent = formatTokenRaw(snapshot.overview.totalThreads);
++
++    const currentSession = snapshot.live.currentSession;
++    document.getElementById("current-session-tokens").textContent = currentSession
++      ? formatTokenMillions(currentSession.totalTokens)
++      : "-";
++    document.getElementById("current-session-last").textContent = currentSession
++      ? `最近一次 ${formatTokenMillions(currentSession.lastTokens)}`
++      : "最近一次不可用";
++    document.getElementById("current-model-name").textContent = currentSession?.modelName || "未知模型";
++    document.getElementById("current-model-cost").textContent = currentSession?.cost
++      ? `当前会话费用 ${formatUsd(currentSession.cost.totalUsd)}`
++      : "当前会话费用不可用";
++    document.getElementById("total-estimated-cost").textContent = formatUsd(
++      snapshot.overview.totalEstimatedCost
++    );
++
++    const rateLimits = snapshot.live.rateLimits;
++    const primary = rateLimits?.primary || null;
++    const secondary = rateLimits?.secondary || null;
++
++    document.getElementById("plan-type").textContent = rateLimits?.planType || "未知计划";
++    document.getElementById("primary-label").textContent = primary?.label || "主限制窗口";
++    document.getElementById("secondary-label").textContent = secondary?.label || "次限制窗口";
++    document.getElementById("primary-percent").textContent = formatPercent(primary?.usedPercent);
++    document.getElementById("secondary-percent").textContent = formatPercent(secondary?.usedPercent);
++    document.getElementById("primary-bar").style.width = clampPercent(primary?.usedPercent);
++    document.getElementById("secondary-bar").style.width = clampPercent(secondary?.usedPercent);
++    document.getElementById("primary-remaining").textContent = primary
++      ? `剩余 ${formatPercent(primary.remainingPercent)}`
++      : "剩余不可用";
++    document.getElementById("secondary-remaining").textContent = secondary
++      ? `剩余 ${formatPercent(secondary.remainingPercent)}`
++      : "剩余不可用";
++    document.getElementById("primary-reset").textContent = primary
++      ? `重置于 ${formatResetTime(primary.resetsAt)} · ${primary.windowMinutes} 分钟窗口`
++      : "主限制窗口不可用";
++    document.getElementById("secondary-reset").textContent = secondary
++      ? `重置于 ${formatResetTime(secondary.resetsAt)} · ${secondary.windowMinutes} 分钟窗口`
++      : "次限制窗口不可用";
++    document.getElementById("credits-status").textContent =
++      rateLimits?.credits === null || rateLimits?.credits === undefined
++        ? "本地日志未暴露 credits 字段"
++        : `Credits: ${rateLimits.credits}`;
++    document.getElementById("rate-limit-source").textContent = snapshot.live.latestRateLimitAt
++      ? `限制快照时间 ${new Date(snapshot.live.latestRateLimitAt).toLocaleString("zh-CN")}`
++      : "暂无限制快照";
++
++    renderDailyUsage(snapshot);
++    renderRecentThreads(snapshot);
++    renderCostBreakdown(currentSession);
++    renderPricingCatalog(snapshot);
++  }
++
++  function setConnectionState(isLive, label) {
++    const dot = document.getElementById("live-dot");
++    const status = document.getElementById("live-status");
++    if (!dot || !status) {
++      return;
++    }
++
++    dot.classList.toggle("live", isLive);
++    status.textContent = label;
++  }
++
++  async function fetchSnapshot() {
++    const response = await fetch("/api/snapshot");
++    if (!response.ok) {
++      throw new Error(`Snapshot request failed with ${response.status}`);
++    }
++
++    return response.json();
++  }
++
++  async function startDashboard() {
++    try {
++      renderSnapshot(await fetchSnapshot());
++      setConnectionState(true, "实时中");
++    } catch (error) {
++      setConnectionState(false, "读取失败");
++      console.error(error);
++    }
++
++    if ("EventSource" in globalScope) {
++      const source = new EventSource("/api/stream");
++
++      source.addEventListener("snapshot", (event) => {
++        setConnectionState(true, "实时流");
++        renderSnapshot(JSON.parse(event.data));
++      });
++
++      source.onerror = () => {
++        setConnectionState(false, "重连中");
++      };
++      return;
++    }
++
++    setInterval(async () => {
++      try {
++        renderSnapshot(await fetchSnapshot());
++      } catch (error) {
++        console.error(error);
++      }
++    }, 5000);
++  }
++
++  if (typeof module !== "undefined" && module.exports) {
++    module.exports = {
++      formatTokenMillions,
++      formatPercent,
++      formatResetTime,
++      formatUsd,
++    };
++  }
++
++  if (typeof document !== "undefined") {
++    globalScope.addEventListener("DOMContentLoaded", startDashboard);
++  }
++})(typeof globalThis !== "undefined" ? globalThis : window);
+diff --git a/public/index.html b/public/index.html
+new file mode 100644
+index 0000000..2ed434e
+--- /dev/null
++++ b/public/index.html
+@@ -0,0 +1,187 @@
++<!DOCTYPE html>
++<html lang="zh-CN">
++  <head>
++    <meta charset="UTF-8" />
++    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
++    <title>Codex 本地消耗看板</title>
++    <link rel="icon" href="data:," />
++    <link rel="stylesheet" href="/styles.css" />
++  </head>
++  <body>
++    <div class="page-shell">
++      <header class="hero">
++        <div class="hero-copy">
++          <p class="eyebrow">Codex 本地消耗与限制监控</p>
++          <h1>本地用量驾驶舱</h1>
++          <p class="hero-text">
++            只读取你本机 <code>~/.codex</code> 的 SQLite 与 session 日志，展示
++            token 消耗、限制窗口、模型名称、单价与费用估算。
++          </p>
++        </div>
++        <div class="hero-status">
++          <div class="status-chip">
++            <span class="status-dot" id="live-dot"></span>
++            <span id="live-status">连接中</span>
++          </div>
++          <p id="generated-at" class="meta-line">等待第一份快照</p>
++          <p id="source-home" class="meta-line"></p>
++        </div>
++      </header>
++
++      <main class="dashboard-grid">
++        <section class="panel span-12">
++          <div class="section-heading">
++            <span>总览</span>
++            <small>统一以 M 表示百万 token</small>
++          </div>
++          <div class="metric-grid metric-grid-five">
++            <article class="metric-card">
++              <span class="metric-label">历史总消耗</span>
++              <strong class="metric-value" id="total-tokens">-</strong>
++              <span class="metric-subvalue metric-subvalue-muted" id="total-tokens-raw">-</span>
++            </article>
++            <article class="metric-card">
++              <span class="metric-label">当前线程数</span>
++              <strong class="metric-value" id="total-threads">-</strong>
++              <span class="metric-subvalue metric-subvalue-muted">未归档会话</span>
++            </article>
++            <article class="metric-card accent-card">
++              <span class="metric-label">当前会话消耗</span>
++              <strong class="metric-value" id="current-session-tokens">-</strong>
++              <span class="metric-subvalue" id="current-session-last">最近一次 -</span>
++            </article>
++            <article class="metric-card bill-card">
++              <span class="metric-label">累计估算费用</span>
++              <strong class="metric-value" id="total-estimated-cost">-</strong>
++              <span class="metric-subvalue metric-subvalue-muted">按所有 `last_token_usage` 逐笔累加</span>
++            </article>
++            <article class="metric-card cost-card">
++              <span class="metric-label">当前模型</span>
++              <strong class="metric-value" id="current-model-name">-</strong>
++              <span class="metric-subvalue" id="current-model-cost">当前会话费用 -</span>
++            </article>
++          </div>
++        </section>
++
++        <section class="panel span-12">
++          <div class="section-heading">
++            <span>限制窗口</span>
++            <small>本地日志中最近一次出现的限制快照</small>
++          </div>
++          <div class="limit-grid">
++            <article class="quota-card">
++              <div class="quota-topline">
++                <span id="primary-label">5小时窗口</span>
++                <strong id="primary-percent">-</strong>
++              </div>
++              <div class="quota-bar"><div id="primary-bar"></div></div>
++              <p class="quota-meta" id="primary-remaining">剩余 -</p>
++              <p class="quota-meta" id="primary-reset">等待快照</p>
++            </article>
++            <article class="quota-card">
++              <div class="quota-topline">
++                <span id="secondary-label">7天窗口</span>
++                <strong id="secondary-percent">-</strong>
++              </div>
++              <div class="quota-bar"><div id="secondary-bar"></div></div>
++              <p class="quota-meta" id="secondary-remaining">剩余 -</p>
++              <p class="quota-meta" id="secondary-reset">等待快照</p>
++            </article>
++            <article class="quota-card quota-meta-card">
++              <div class="quota-topline">
++                <span>账户限制信息</span>
++                <strong id="plan-type">未知</strong>
++              </div>
++              <p class="quota-meta" id="credits-status">等待快照</p>
++              <p class="quota-meta" id="rate-limit-source">限制来源 -</p>
++            </article>
++          </div>
++
++          <div class="detail-grid">
++            <article class="panel inset-panel">
++              <div class="section-heading compact-heading">
++                <span>当前会话账单明细</span>
++                <small>这是当前会话累计，不是全局累计</small>
++              </div>
++              <div class="cost-breakdown" id="cost-breakdown">
++                <div class="cost-row">
++                  <span>等待数据</span>
++                </div>
++              </div>
++            </article>
++            <article class="panel inset-panel">
++              <div class="section-heading compact-heading">
++                <span>模型价格表</span>
++                <small>从本地日志提取模型，再匹配单价</small>
++              </div>
++              <div id="pricing-table" class="pricing-table empty-state">
++                等待数据
++              </div>
++            </article>
++          </div>
++        </section>
++
++        <section class="panel span-5">
++          <div class="section-heading">
++            <span>每日账单走势</span>
++            <small>折线图 + 每日明细账单</small>
++          </div>
++          <div class="daily-chart-summary">
++            <div class="summary-pill">
++              <span>累计估算费用</span>
++              <strong id="daily-total-cost">-</strong>
++            </div>
++            <div class="summary-pill">
++              <span>最近一天</span>
++              <strong id="latest-daily-cost">-</strong>
++            </div>
++          </div>
++          <div class="chart-grid">
++            <article class="line-chart-card">
++              <div class="chart-card-head">
++                <span>每日 Token 折线图</span>
++                <strong id="token-chart-peak">-</strong>
++              </div>
++              <div id="token-chart" class="line-chart-shell">等待数据</div>
++            </article>
++            <article class="line-chart-card">
++              <div class="chart-card-head">
++                <span>每日费用折线图</span>
++                <strong id="cost-chart-peak">-</strong>
++              </div>
++              <div id="cost-chart" class="line-chart-shell">等待数据</div>
++            </article>
++          </div>
++          <div id="daily-ledger" class="daily-ledger empty-state">等待数据</div>
++        </section>
++
++        <section class="panel span-7">
++          <div class="section-heading">
++            <span>最近会话</span>
++            <small>模型、消耗、费用估算与更新时间</small>
++          </div>
++          <div class="table-scroll">
++            <table>
++              <thead>
++                <tr>
++                  <th>标题</th>
++                  <th>模型</th>
++                  <th>消耗</th>
++                  <th>费用</th>
++                  <th>更新时间</th>
++                </tr>
++              </thead>
++              <tbody id="recent-threads">
++                <tr>
++                  <td colspan="5" class="empty-row">等待数据</td>
++                </tr>
++              </tbody>
++            </table>
++          </div>
++        </section>
++      </main>
++    </div>
++
++    <script src="/app.js"></script>
++  </body>
++</html>
+diff --git a/public/styles.css b/public/styles.css
+new file mode 100644
+index 0000000..8c40a9d
+--- /dev/null
++++ b/public/styles.css
+@@ -0,0 +1,615 @@
++:root {
++  --paper: #f3efe5;
++  --paper-deep: #e2d7c1;
++  --ink: #171512;
++  --muted: #655b4d;
++  --accent: #bf3b20;
++  --accent-soft: #e2a27a;
++  --accent-deep: #1b5366;
++  --line: rgba(23, 21, 18, 0.14);
++  --shadow: 0 18px 50px rgba(40, 30, 10, 0.08);
++}
++
++* {
++  box-sizing: border-box;
++}
++
++body {
++  margin: 0;
++  min-height: 100vh;
++  background:
++    radial-gradient(circle at top left, rgba(191, 59, 32, 0.14), transparent 28%),
++    radial-gradient(circle at bottom right, rgba(31, 60, 87, 0.12), transparent 30%),
++    linear-gradient(180deg, #f8f4eb 0%, #f0eadc 100%);
++  color: var(--ink);
++  font-family: "Avenir Next", "PingFang SC", "Hiragino Sans GB", sans-serif;
++}
++
++code,
++.metric-value,
++.quota-topline strong,
++.cost-row strong,
++td:nth-child(3),
++td:nth-child(4) {
++  font-family: "SF Mono", "Menlo", "Monaco", monospace;
++}
++
++.page-shell {
++  max-width: 1320px;
++  margin: 0 auto;
++  padding: 32px 20px 48px;
++}
++
++.hero {
++  display: grid;
++  grid-template-columns: 1.35fr 0.75fr;
++  gap: 20px;
++  align-items: stretch;
++  margin-bottom: 22px;
++}
++
++.hero-copy,
++.hero-status,
++.panel {
++  background: rgba(255, 253, 247, 0.76);
++  border: 1px solid var(--line);
++  box-shadow: var(--shadow);
++  backdrop-filter: blur(10px);
++}
++
++.hero-copy,
++.hero-status {
++  padding: 28px;
++  border-radius: 24px;
++}
++
++.hero-status {
++  position: relative;
++  overflow: hidden;
++}
++
++.hero-status::before {
++  content: "";
++  position: absolute;
++  inset: auto -40px -60px auto;
++  width: 180px;
++  height: 180px;
++  border-radius: 50%;
++  background: radial-gradient(circle, rgba(191, 59, 32, 0.22), transparent 70%);
++}
++
++.eyebrow {
++  margin: 0 0 10px;
++  text-transform: uppercase;
++  letter-spacing: 0.18em;
++  font-size: 12px;
++  color: var(--muted);
++}
++
++h1 {
++  margin: 0;
++  font-size: clamp(42px, 8vw, 80px);
++  line-height: 0.96;
++  font-family: "Iowan Old Style", "STSong", serif;
++  font-weight: 700;
++}
++
++.hero-text {
++  max-width: 58ch;
++  margin: 16px 0 0;
++  color: var(--muted);
++  line-height: 1.7;
++}
++
++.status-chip {
++  display: inline-flex;
++  align-items: center;
++  gap: 10px;
++  padding: 10px 14px;
++  border-radius: 999px;
++  border: 1px solid var(--line);
++  background: rgba(255, 255, 255, 0.7);
++  font-size: 13px;
++  text-transform: uppercase;
++  letter-spacing: 0.12em;
++}
++
++.status-dot {
++  width: 11px;
++  height: 11px;
++  border-radius: 50%;
++  background: #c7b9a2;
++  box-shadow: 0 0 0 0 rgba(191, 59, 32, 0.55);
++}
++
++.status-dot.live {
++  background: var(--accent);
++  animation: pulse 1.8s infinite;
++}
++
++.meta-line {
++  margin: 16px 0 0;
++  color: var(--muted);
++  line-height: 1.5;
++}
++
++.dashboard-grid {
++  display: grid;
++  grid-template-columns: repeat(12, 1fr);
++  gap: 20px;
++}
++
++.panel {
++  padding: 22px;
++  border-radius: 22px;
++  min-height: 220px;
++}
++
++.span-12 {
++  grid-column: span 12;
++}
++
++.span-7 {
++  grid-column: span 7;
++}
++
++.span-5 {
++  grid-column: span 5;
++}
++
++.section-heading {
++  display: flex;
++  justify-content: space-between;
++  gap: 16px;
++  align-items: baseline;
++  margin-bottom: 18px;
++}
++
++.section-heading span {
++  font-family: "Iowan Old Style", "STSong", serif;
++  font-size: 28px;
++}
++
++.section-heading small {
++  color: var(--muted);
++}
++
++.compact-heading span {
++  font-size: 22px;
++}
++
++.metric-grid {
++  display: grid;
++  gap: 14px;
++}
++
++.metric-grid-four {
++  grid-template-columns: repeat(4, minmax(0, 1fr));
++}
++
++.metric-grid-five {
++  grid-template-columns: repeat(5, minmax(0, 1fr));
++}
++
++.metric-card {
++  padding: 18px;
++  min-height: 160px;
++  border-radius: 18px;
++  background: linear-gradient(180deg, rgba(255, 255, 255, 0.72), rgba(241, 232, 213, 0.72));
++  border: 1px solid var(--line);
++}
++
++.accent-card {
++  background: linear-gradient(180deg, rgba(191, 59, 32, 0.92), rgba(129, 33, 17, 0.92));
++  color: #fff8f3;
++}
++
++.cost-card {
++  background: linear-gradient(180deg, rgba(27, 83, 102, 0.92), rgba(18, 54, 66, 0.92));
++  color: #eef7fb;
++}
++
++.bill-card {
++  background: linear-gradient(180deg, rgba(239, 233, 222, 0.95), rgba(229, 220, 208, 0.95));
++}
++
++.metric-label {
++  display: block;
++  font-size: 12px;
++  text-transform: uppercase;
++  letter-spacing: 0.12em;
++  color: inherit;
++  opacity: 0.82;
++}
++
++.metric-value {
++  display: block;
++  margin-top: 16px;
++  font-size: clamp(28px, 3vw, 42px);
++  line-height: 1.05;
++}
++
++.metric-subvalue {
++  display: inline-block;
++  margin-top: 12px;
++  padding-top: 12px;
++  border-top: 1px solid rgba(255, 255, 255, 0.22);
++  opacity: 0.9;
++}
++
++.metric-subvalue-muted {
++  color: var(--muted);
++  border-top-color: rgba(23, 21, 18, 0.12);
++}
++
++.limit-grid {
++  display: grid;
++  grid-template-columns: repeat(3, minmax(0, 1fr));
++  gap: 14px;
++}
++
++.quota-card {
++  padding: 16px;
++  border-radius: 16px;
++  border: 1px solid var(--line);
++  background: rgba(255, 255, 255, 0.58);
++}
++
++.quota-meta-card {
++  background: linear-gradient(180deg, rgba(237, 247, 248, 0.8), rgba(229, 237, 238, 0.72));
++}
++
++.quota-topline {
++  display: flex;
++  justify-content: space-between;
++  gap: 12px;
++  align-items: center;
++}
++
++.quota-bar {
++  height: 12px;
++  margin: 12px 0 10px;
++  background: rgba(101, 91, 77, 0.12);
++  border-radius: 999px;
++  overflow: hidden;
++}
++
++.quota-bar > div {
++  width: 0;
++  height: 100%;
++  border-radius: inherit;
++  background: linear-gradient(90deg, var(--accent-soft), var(--accent));
++  transition: width 0.45s ease;
++}
++
++.quota-meta {
++  color: var(--muted);
++  margin: 8px 0 0;
++}
++
++.detail-grid {
++  display: grid;
++  grid-template-columns: minmax(0, 1.3fr) minmax(0, 0.9fr);
++  gap: 14px;
++  margin-top: 14px;
++}
++
++.inset-panel {
++  min-height: 0;
++  background: rgba(255, 255, 255, 0.6);
++  box-shadow: none;
++}
++
++.cost-breakdown {
++  display: grid;
++  gap: 10px;
++}
++
++.cost-row {
++  display: grid;
++  grid-template-columns: minmax(0, 1.2fr) minmax(0, 0.8fr) minmax(0, 0.8fr) minmax(0, 0.8fr);
++  gap: 12px;
++  align-items: center;
++  padding: 12px 14px;
++  border-radius: 14px;
++  background: rgba(245, 244, 240, 0.8);
++  border: 1px solid var(--line);
++}
++
++.cost-row.single-row {
++  grid-template-columns: 1fr;
++}
++
++.cost-row.total-row {
++  grid-template-columns: 1fr auto;
++}
++
++.cost-meta {
++  color: var(--muted);
++  font-size: 13px;
++}
++
++.pricing-source {
++  display: grid;
++  gap: 8px;
++  align-content: start;
++}
++
++.pricing-table {
++  display: grid;
++  gap: 10px;
++}
++
++.pricing-head,
++.pricing-row {
++  display: grid;
++  grid-template-columns: minmax(0, 1.6fr) repeat(3, minmax(0, 0.8fr));
++  gap: 12px;
++  align-items: start;
++}
++
++.pricing-head {
++  color: var(--muted);
++  font-size: 12px;
++  text-transform: uppercase;
++  letter-spacing: 0.1em;
++}
++
++.pricing-row {
++  padding: 12px 14px;
++  border-radius: 12px;
++  background: rgba(255, 255, 255, 0.62);
++  border: 1px solid var(--line);
++}
++
++.pricing-source-note {
++  display: block;
++  margin-top: 4px;
++  color: var(--muted);
++  font-size: 12px;
++}
++
++.compact-meta {
++  margin-top: 0;
++}
++
++.usage-bars {
++  display: grid;
++  gap: 12px;
++}
++
++.usage-row {
++  display: grid;
++  grid-template-columns: 88px minmax(0, 1fr) auto;
++  gap: 12px;
++  align-items: center;
++}
++
++.usage-track {
++  height: 14px;
++  border-radius: 999px;
++  background: rgba(23, 21, 18, 0.08);
++  overflow: hidden;
++}
++
++.usage-track span {
++  display: block;
++  height: 100%;
++  border-radius: inherit;
++  background: linear-gradient(90deg, #23425a, #d86944);
++}
++
++.table-scroll {
++  overflow-x: auto;
++}
++
++table {
++  width: 100%;
++  border-collapse: collapse;
++  table-layout: fixed;
++}
++
++th,
++td {
++  padding: 12px 8px;
++  border-bottom: 1px solid var(--line);
++  text-align: left;
++  vertical-align: top;
++}
++
++th {
++  font-size: 12px;
++  text-transform: uppercase;
++  letter-spacing: 0.12em;
++  color: var(--muted);
++}
++
++.thread-title {
++  display: -webkit-box;
++  overflow: hidden;
++  -webkit-line-clamp: 2;
++  -webkit-box-orient: vertical;
++  line-height: 1.45;
++  word-break: break-word;
++  font-weight: 600;
++}
++
++.thread-meta {
++  display: block;
++  margin-top: 4px;
++  color: var(--muted);
++  font-size: 13px;
++  word-break: break-all;
++}
++
++.empty-state,
++.empty-row {
++  color: var(--muted);
++}
++
++.daily-chart-summary {
++  display: grid;
++  grid-template-columns: repeat(2, minmax(0, 1fr));
++  gap: 12px;
++  margin-bottom: 14px;
++}
++
++.summary-pill {
++  padding: 12px 14px;
++  border-radius: 14px;
++  background: rgba(255, 255, 255, 0.65);
++  border: 1px solid var(--line);
++}
++
++.summary-pill span {
++  display: block;
++  color: var(--muted);
++  font-size: 12px;
++  text-transform: uppercase;
++  letter-spacing: 0.1em;
++}
++
++.summary-pill strong {
++  display: block;
++  margin-top: 8px;
++  font-family: "SF Mono", "Menlo", "Monaco", monospace;
++  font-size: 24px;
++}
++
++.line-chart-shell {
++  padding: 14px;
++  border-radius: 16px;
++  background: rgba(255, 255, 255, 0.62);
++  border: 1px solid var(--line);
++}
++
++.line-chart {
++  width: 100%;
++  height: 220px;
++  display: block;
++}
++
++.chart-axis {
++  stroke: rgba(23, 21, 18, 0.15);
++  stroke-width: 1;
++}
++
++.chart-line {
++  fill: none;
++  stroke: var(--accent-deep);
++  stroke-width: 2.4;
++  stroke-linejoin: round;
++  stroke-linecap: round;
++}
++
++.chart-line-token {
++  stroke: #1f6071;
++}
++
++.chart-line-cost {
++  stroke: #bf3b20;
++}
++
++.chart-legend {
++  display: flex;
++  justify-content: space-between;
++  gap: 12px;
++  color: var(--muted);
++  font-size: 13px;
++}
++
++.daily-ledger {
++  margin-top: 14px;
++  display: grid;
++  gap: 8px;
++}
++
++.chart-grid {
++  display: grid;
++  grid-template-columns: repeat(2, minmax(0, 1fr));
++  gap: 14px;
++}
++
++.line-chart-card {
++  padding: 14px;
++  border-radius: 16px;
++  background: rgba(255, 255, 255, 0.45);
++  border: 1px solid var(--line);
++}
++
++.chart-card-head {
++  display: flex;
++  justify-content: space-between;
++  gap: 12px;
++  align-items: baseline;
++  margin-bottom: 10px;
++}
++
++.ledger-row {
++  display: grid;
++  grid-template-columns: 1fr auto auto;
++  gap: 12px;
++  align-items: center;
++  padding: 10px 12px;
++  border-radius: 12px;
++  background: rgba(255, 255, 255, 0.62);
++  border: 1px solid var(--line);
++}
++
++@keyframes pulse {
++  0% {
++    box-shadow: 0 0 0 0 rgba(191, 59, 32, 0.45);
++  }
++  70% {
++    box-shadow: 0 0 0 12px rgba(191, 59, 32, 0);
++  }
++  100% {
++    box-shadow: 0 0 0 0 rgba(191, 59, 32, 0);
++  }
++}
++
++@media (max-width: 1080px) {
++  .metric-grid-four,
++  .metric-grid-five,
++  .limit-grid,
++  .detail-grid,
++  .chart-grid {
++    grid-template-columns: 1fr;
++  }
++}
++
++@media (max-width: 980px) {
++  .hero,
++  .dashboard-grid {
++    grid-template-columns: 1fr;
++  }
++
++  .span-12,
++  .span-7,
++  .span-5 {
++    grid-column: auto;
++  }
++}
++
++@media (max-width: 720px) {
++  .page-shell {
++    padding: 20px 14px 32px;
++  }
++
++  .cost-row,
++  .cost-row.total-row,
++  .usage-row {
++    grid-template-columns: 1fr;
++  }
++
++  .daily-chart-summary,
++  .ledger-row,
++  .pricing-head,
++  .pricing-row {
++    grid-template-columns: 1fr;
++  }
++
++  table {
++    min-width: 720px;
++  }
++}
+diff --git a/server/app.js b/server/app.js
+new file mode 100644
+index 0000000..9925bb7
+--- /dev/null
++++ b/server/app.js
+@@ -0,0 +1,102 @@
++const fs = require("node:fs");
++const path = require("node:path");
++const http = require("node:http");
++
++const { createLiveSnapshotService } = require("./lib/liveSnapshotService");
++
++const MIME_TYPES = {
++  ".html": "text/html; charset=utf-8",
++  ".css": "text/css; charset=utf-8",
++  ".js": "application/javascript; charset=utf-8",
++  ".json": "application/json; charset=utf-8",
++};
++
++function sendJson(response, statusCode, payload) {
++  response.writeHead(statusCode, {
++    "content-type": "application/json; charset=utf-8",
++    "cache-control": "no-store",
++  });
++  response.end(JSON.stringify(payload));
++}
++
++function sendNotFound(response) {
++  sendJson(response, 404, { error: "Not found" });
++}
++
++function serveStaticFile(response, filePath) {
++  if (!fs.existsSync(filePath)) {
++    sendNotFound(response);
++    return;
++  }
++
++  const extname = path.extname(filePath);
++  const mimeType = MIME_TYPES[extname] || "text/plain; charset=utf-8";
++
++  response.writeHead(200, {
++    "content-type": mimeType,
++    "cache-control": "no-store",
++  });
++  response.end(fs.readFileSync(filePath));
++}
++
++function createAppServer(options = {}) {
++  const publicDir = options.publicDir || path.join(process.cwd(), "public");
++  const liveSnapshotService = createLiveSnapshotService(options);
++
++  return http.createServer(async (request, response) => {
++    const url = new URL(request.url, "http://127.0.0.1");
++
++    if (request.method === "GET" && url.pathname === "/api/snapshot") {
++      try {
++        const snapshot = await liveSnapshotService.getLatestSnapshot();
++        sendJson(response, 200, snapshot);
++      } catch (error) {
++        sendJson(response, 500, { error: error.message });
++      }
++      return;
++    }
++
++    if (request.method === "GET" && url.pathname === "/api/stream") {
++      response.writeHead(200, {
++        "content-type": "text/event-stream; charset=utf-8",
++        "cache-control": "no-cache, no-transform",
++        connection: "keep-alive",
++      });
++
++      response.write(": connected\n\n");
++
++      const writeSnapshot = (snapshot) => {
++        response.write(`event: snapshot\n`);
++        response.write(`data: ${JSON.stringify(snapshot)}\n\n`);
++      };
++
++      try {
++        writeSnapshot(await liveSnapshotService.getLatestSnapshot());
++      } catch (error) {
++        response.write(`event: error\n`);
++        response.write(`data: ${JSON.stringify({ error: error.message })}\n\n`);
++      }
++
++      const unsubscribe = liveSnapshotService.subscribe(writeSnapshot);
++      request.on("close", unsubscribe);
++      return;
++    }
++
++    if (request.method === "GET" && (url.pathname === "/" || url.pathname === "/index.html")) {
++      serveStaticFile(response, path.join(publicDir, "index.html"));
++      return;
++    }
++
++    if (request.method === "GET") {
++      const requestedPath = path.normalize(url.pathname).replace(/^(\.\.[/\\])+/, "");
++      serveStaticFile(response, path.join(publicDir, requestedPath));
++      return;
++    }
++
++    sendNotFound(response);
++  });
++}
++
++module.exports = {
++  createAppServer,
++};
+diff --git a/server/index.js b/server/index.js
+new file mode 100644
+index 0000000..07dab80
+--- /dev/null
++++ b/server/index.js
+@@ -0,0 +1,13 @@
++const { createAppServer } = require("./app");
++
++const port = Number(process.env.PORT || 4318);
++const host = process.env.HOST || "127.0.0.1";
++
++const server = createAppServer({
++  codexHome: process.env.CODEX_HOME,
++  refreshIntervalMs: Number(process.env.REFRESH_INTERVAL_MS || 5000),
++});
++
++server.listen(port, host, () => {
++  console.log(`Codex usage dashboard listening on http://${host}:${port}`);
++});
+diff --git a/server/lib/codexPaths.js b/server/lib/codexPaths.js
+new file mode 100644
+index 0000000..eb3ffa1
+--- /dev/null
++++ b/server/lib/codexPaths.js
+@@ -0,0 +1,30 @@
++const os = require("node:os");
++const path = require("node:path");
++
++function resolveCodexHome(explicitHome) {
++  if (explicitHome) {
++    return path.resolve(explicitHome);
++  }
++
++  if (process.env.CODEX_HOME) {
++    return path.resolve(process.env.CODEX_HOME);
++  }
++
++  return path.join(os.homedir(), ".codex");
++}
++
++function resolveCodexPaths(explicitHome) {
++  const codexHome = resolveCodexHome(explicitHome);
++
++  return {
++    codexHome,
++    stateDbPath: path.join(codexHome, "state_5.sqlite"),
++    sessionsDir: path.join(codexHome, "sessions"),
++    archivedSessionsDir: path.join(codexHome, "archived_sessions"),
++  };
++}
++
++module.exports = {
++  resolveCodexHome,
++  resolveCodexPaths,
++};
+diff --git a/server/lib/liveSnapshotService.js b/server/lib/liveSnapshotService.js
+new file mode 100644
+index 0000000..cc23664
+--- /dev/null
++++ b/server/lib/liveSnapshotService.js
+@@ -0,0 +1,53 @@
++const { loadSnapshot } = require("./usageRepository");
++
++function createLiveSnapshotService(options = {}) {
++  const listeners = new Set();
++  const refreshIntervalMs = options.refreshIntervalMs || 5000;
++  let timer = null;
++  let latestSnapshotPromise = null;
++
++  async function refresh() {
++    latestSnapshotPromise = loadSnapshot(options);
++    const snapshot = await latestSnapshotPromise;
++
++    for (const listener of listeners) {
++      listener(snapshot);
++    }
++
++    return snapshot;
++  }
++
++  function subscribe(listener) {
++    listeners.add(listener);
++
++    if (!timer) {
++      timer = setInterval(() => {
++        refresh().catch(() => {});
++      }, refreshIntervalMs);
++    }
++
++    return () => {
++      listeners.delete(listener);
++      if (!listeners.size && timer) {
++        clearInterval(timer);
++        timer = null;
++      }
++    };
++  }
++
++  return {
++    refresh,
++    subscribe,
++    getLatestSnapshot: async () => {
++      if (!latestSnapshotPromise) {
++        latestSnapshotPromise = loadSnapshot(options);
++      }
++
++      return latestSnapshotPromise;
++    },
++  };
++}
++
++module.exports = {
++  createLiveSnapshotService,
++};
+diff --git a/server/lib/pricing.js b/server/lib/pricing.js
+new file mode 100644
+index 0000000..294a74a
+--- /dev/null
++++ b/server/lib/pricing.js
+@@ -0,0 +1,208 @@
++const PRICING_BY_MODEL = {
++  "gpt-5-codex": {
++    inputPerMillion: 1.25,
++    cachedInputPerMillion: 0.125,
++    outputPerMillion: 10,
++    sourceType: "official",
++    sourceLabel: "OpenAI GPT-5-Codex",
++    sourceUrl: "https://platform.openai.com/docs/models/gpt-5-codex/",
++  },
++  "gpt-5.1-codex": {
++    inputPerMillion: 1.25,
++    cachedInputPerMillion: 0.125,
++    outputPerMillion: 10,
++    sourceType: "official",
++    sourceLabel: "OpenAI GPT-5.1-Codex",
++    sourceUrl: "https://developers.openai.com/api/docs/models/gpt-5.1-codex",
++  },
++  "gpt-5.1-codex-max": {
++    inputPerMillion: 1.25,
++    cachedInputPerMillion: 0.125,
++    outputPerMillion: 10,
++    sourceType: "official",
++    sourceLabel: "OpenAI Pricing",
++    sourceUrl: "https://platform.openai.com/docs/pricing/",
++  },
++  "gpt-5.2-codex": {
++    inputPerMillion: 1.75,
++    cachedInputPerMillion: 0.175,
++    outputPerMillion: 14,
++    sourceType: "official",
++    sourceLabel: "OpenAI Pricing",
++    sourceUrl: "https://platform.openai.com/docs/pricing/",
++  },
++  "gpt-5.3-codex": {
++    inputPerMillion: 1.75,
++    cachedInputPerMillion: 0.175,
++    outputPerMillion: 14,
++    sourceType: "official",
++    sourceLabel: "OpenAI GPT-5.3-Codex",
++    sourceUrl: "https://developers.openai.com/api/docs/models/gpt-5.3-codex",
++  },
++  "gpt-5.4": {
++    inputPerMillion: 2.5,
++    cachedInputPerMillion: 0.25,
++    outputPerMillion: 15,
++    sourceType: "official",
++    sourceLabel: "OpenAI GPT-5.4",
++    sourceUrl: "https://developers.openai.com/api/docs/models/gpt-5.4",
++  },
++  "gpt-5": {
++    inputPerMillion: 1.25,
++    cachedInputPerMillion: 0.125,
++    outputPerMillion: 10,
++    sourceType: "official",
++    sourceLabel: "OpenAI Pricing",
++    sourceUrl: "https://platform.openai.com/docs/pricing/",
++  },
++  "gpt-5.1": {
++    inputPerMillion: 1.25,
++    cachedInputPerMillion: 0.125,
++    outputPerMillion: 10,
++    sourceType: "official",
++    sourceLabel: "OpenAI Pricing",
++    sourceUrl: "https://platform.openai.com/docs/pricing/",
++  },
++  "gpt-5.2": {
++    inputPerMillion: 1.75,
++    cachedInputPerMillion: 0.175,
++    outputPerMillion: 14,
++    sourceType: "official",
++    sourceLabel: "OpenAI Pricing",
++    sourceUrl: "https://platform.openai.com/docs/pricing/",
++  },
++  "gpt-5-mini": {
++    inputPerMillion: 0.25,
++    cachedInputPerMillion: 0.025,
++    outputPerMillion: 2,
++    sourceType: "official",
++    sourceLabel: "OpenAI Pricing",
++    sourceUrl: "https://platform.openai.com/docs/pricing/",
++  },
++  "gpt-5-nano": {
++    inputPerMillion: 0.05,
++    cachedInputPerMillion: 0.005,
++    outputPerMillion: 0.4,
++    sourceType: "official",
++    sourceLabel: "OpenAI Pricing",
++    sourceUrl: "https://platform.openai.com/docs/pricing/",
++  },
++  "gpt-5-pro": {
++    inputPerMillion: 15,
++    cachedInputPerMillion: null,
++    outputPerMillion: 120,
++    sourceType: "official",
++    sourceLabel: "OpenAI Pricing",
++    sourceUrl: "https://platform.openai.com/docs/pricing/",
++  },
++  "gpt-4.1": {
++    inputPerMillion: 2,
++    cachedInputPerMillion: 0.5,
++    outputPerMillion: 8,
++    sourceType: "official",
++    sourceLabel: "OpenAI Pricing",
++    sourceUrl: "https://platform.openai.com/docs/pricing/",
++  },
++  "gpt-4.1-mini": {
++    inputPerMillion: 0.4,
++    cachedInputPerMillion: 0.1,
++    outputPerMillion: 1.6,
++    sourceType: "official",
++    sourceLabel: "OpenAI Pricing",
++    sourceUrl: "https://platform.openai.com/docs/pricing/",
++  },
++};
++
++function normalizeModelName(modelName) {
++  if (!modelName) {
++    return null;
++  }
++
++  const normalized = String(modelName).trim().toLowerCase();
++  if (/^\d/.test(normalized)) {
++    return `gpt-${normalized}`;
++  }
++
++  return normalized;
++}
++
++function getPricingForModel(modelName) {
++  const normalizedModelName = normalizeModelName(modelName);
++  if (!normalizedModelName) {
++    return null;
++  }
++
++  const exactMatch = PRICING_BY_MODEL[normalizedModelName];
++  if (exactMatch) {
++    return {
++      normalizedModelName,
++      pricingModelName: normalizedModelName,
++      ...exactMatch,
++    };
++  }
++
++  if (normalizedModelName.endsWith("-spark")) {
++    const baseModel = normalizedModelName.replace(/-spark$/, "");
++    const basePricing = PRICING_BY_MODEL[baseModel];
++    if (basePricing) {
++      return {
++        normalizedModelName,
++        pricingModelName: baseModel,
++        ...basePricing,
++        sourceType: "inferred",
++        sourceLabel: `${basePricing.sourceLabel}（按 spark 别名推断）`,
++      };
++    }
++  }
++
++  if (normalizedModelName.endsWith("-codex")) {
++    const baseModel = normalizedModelName.replace(/-codex$/, "");
++    const basePricing = PRICING_BY_MODEL[baseModel];
++    if (basePricing) {
++      return {
++        normalizedModelName,
++        pricingModelName: baseModel,
++        ...basePricing,
++        sourceType: "inferred",
++        sourceLabel: `${basePricing.sourceLabel}（按 codex 别名推断）`,
++      };
++    }
++  }
++
++  return null;
++}
++
++function estimateCost(tokenUsage, modelName) {
++  const pricing = getPricingForModel(modelName);
++  if (!tokenUsage || !pricing) {
++    return null;
++  }
++
++  const inputUsd = (Number(tokenUsage.inputTokens || 0) / 1_000_000) * pricing.inputPerMillion;
++  const cachedInputUsd =
++    pricing.cachedInputPerMillion === null
++      ? null
++      : (Number(tokenUsage.cachedInputTokens || 0) / 1_000_000) * pricing.cachedInputPerMillion;
++  const outputUsd = (Number(tokenUsage.outputTokens || 0) / 1_000_000) * pricing.outputPerMillion;
++
++  return {
++    modelName: pricing.normalizedModelName,
++    pricingModelName: pricing.pricingModelName,
++    pricingSourceType: pricing.sourceType,
++    pricingSourceLabel: pricing.sourceLabel,
++    pricingSourceUrl: pricing.sourceUrl,
++    inputPerMillion: pricing.inputPerMillion,
++    cachedInputPerMillion: pricing.cachedInputPerMillion,
++    outputPerMillion: pricing.outputPerMillion,
++    inputUsd,
++    cachedInputUsd,
++    outputUsd,
++    totalUsd: inputUsd + (cachedInputUsd || 0) + outputUsd,
++  };
++}
++
++module.exports = {
++  normalizeModelName,
++  getPricingForModel,
++  estimateCost,
++};
+diff --git a/server/lib/usageRepository.js b/server/lib/usageRepository.js
+new file mode 100644
+index 0000000..46e1b39
+--- /dev/null
++++ b/server/lib/usageRepository.js
+@@ -0,0 +1,534 @@
++const fs = require("node:fs");
++const path = require("node:path");
++const { execFileSync } = require("node:child_process");
++
++const { resolveCodexPaths } = require("./codexPaths");
++const { estimateCost, getPricingForModel, normalizeModelName } = require("./pricing");
++
++function runSqliteJson(dbPath, query) {
++  if (!fs.existsSync(dbPath)) {
++    return [];
++  }
++
++  const stdout = execFileSync("sqlite3", ["-json", dbPath, query], {
++    encoding: "utf8",
++    maxBuffer: 10 * 1024 * 1024,
++  }).trim();
++
++  return stdout ? JSON.parse(stdout) : [];
++}
++
++function getThreadSummary(stateDbPath) {
++  const [overview = { total_threads: 0, total_tokens: 0 }] = runSqliteJson(
++    stateDbPath,
++    `
++      SELECT
++        COUNT(*) AS total_threads,
++        COALESCE(SUM(tokens_used), 0) AS total_tokens,
++        MAX(updated_at) AS latest_updated_at
++      FROM threads
++      WHERE archived = 0;
++    `
++  );
++
++  return {
++    totalThreads: Number(overview.total_threads || 0),
++    totalTokens: Number(overview.total_tokens || 0),
++    latestUpdatedAt: overview.latest_updated_at ? Number(overview.latest_updated_at) : null,
++  };
++}
++
++function getRecentThreads(stateDbPath, limit = 10) {
++  const rows = runSqliteJson(
++    stateDbPath,
++    `
++      SELECT
++        id,
++        title,
++        cwd,
++        model_provider,
++        tokens_used,
++        created_at,
++        updated_at
++      FROM threads
++      WHERE archived = 0
++      ORDER BY updated_at DESC
++      LIMIT ${Number(limit)};
++    `
++  );
++
++  return rows.map((row) => ({
++    id: row.id,
++    title: row.title,
++    cwd: row.cwd,
++    modelProvider: row.model_provider,
++    tokensUsed: Number(row.tokens_used || 0),
++    createdAt: Number(row.created_at),
++    updatedAt: Number(row.updated_at),
++  }));
++}
++
++function getDailyUsage(stateDbPath, days = 14) {
++  const rows = runSqliteJson(
++    stateDbPath,
++    `
++      SELECT
++        date(created_at, 'unixepoch', 'localtime') AS day,
++        COUNT(*) AS total_threads,
++        COALESCE(SUM(tokens_used), 0) AS total_tokens
++      FROM threads
++      WHERE archived = 0
++      GROUP BY day
++      ORDER BY day DESC
++      LIMIT ${Number(days)};
++    `
++  );
++
++  return rows.map((row) => ({
++    day: row.day,
++    totalThreads: Number(row.total_threads || 0),
++    totalTokens: Number(row.total_tokens || 0),
++  }));
++}
++
++function listJsonlFiles(rootDir, target = []) {
++  if (!fs.existsSync(rootDir)) {
++    return target;
++  }
++
++  const entries = fs.readdirSync(rootDir, { withFileTypes: true });
++
++  for (const entry of entries) {
++    const fullPath = path.join(rootDir, entry.name);
++    if (entry.isDirectory()) {
++      listJsonlFiles(fullPath, target);
++      continue;
++    }
++
++    if (entry.isFile() && entry.name.endsWith(".jsonl")) {
++      const stats = fs.statSync(fullPath);
++      target.push({
++        path: fullPath,
++        mtimeMs: stats.mtimeMs,
++      });
++    }
++  }
++
++  return target;
++}
++
++function normalizeTokenUsage(info) {
++  if (!info) {
++    return null;
++  }
++
++  return {
++    totalTokens: Number(info.total_token_usage?.total_tokens || 0),
++    inputTokens: Number(info.total_token_usage?.input_tokens || 0),
++    cachedInputTokens: Number(info.total_token_usage?.cached_input_tokens || 0),
++    outputTokens: Number(info.total_token_usage?.output_tokens || 0),
++    reasoningOutputTokens: Number(info.total_token_usage?.reasoning_output_tokens || 0),
++    lastTokens: Number(info.last_token_usage?.total_tokens || 0),
++    modelContextWindow: Number(info.model_context_window || 0),
++  };
++}
++
++function normalizeLastTokenUsage(info) {
++  if (!info?.last_token_usage) {
++    return null;
++  }
++
++  return {
++    totalTokens: Number(info.last_token_usage.total_tokens || 0),
++    inputTokens: Number(info.last_token_usage.input_tokens || 0),
++    cachedInputTokens: Number(info.last_token_usage.cached_input_tokens || 0),
++    outputTokens: Number(info.last_token_usage.output_tokens || 0),
++    reasoningOutputTokens: Number(info.last_token_usage.reasoning_output_tokens || 0),
++  };
++}
++
++function getLocalDayKey(timestamp, timeZone) {
++  const formatter = new Intl.DateTimeFormat("en-CA", {
++    timeZone,
++    year: "numeric",
++    month: "2-digit",
++    day: "2-digit",
++  });
++
++  const parts = formatter.formatToParts(new Date(timestamp));
++  const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
++  return `${values.year}-${values.month}-${values.day}`;
++}
++
++function labelForWindow(windowMinutes) {
++  if (windowMinutes === 300) {
++    return "5小时窗口";
++  }
++
++  if (windowMinutes === 10080) {
++    return "7天窗口";
++  }
++
++  return `${windowMinutes}分钟窗口`;
++}
++
++function normalizeRateLimits(rateLimits) {
++  if (!rateLimits) {
++    return null;
++  }
++
++  const primaryWindow = rateLimits.primary ? Number(rateLimits.primary.window_minutes || 0) : null;
++  const secondaryWindow = rateLimits.secondary
++    ? Number(rateLimits.secondary.window_minutes || 0)
++    : null;
++
++  return {
++    limitId: rateLimits.limit_id || null,
++    planType: rateLimits.plan_type || null,
++    credits: rateLimits.credits || null,
++    primary: rateLimits.primary
++      ? {
++          usedPercent: Number(rateLimits.primary.used_percent || 0),
++          remainingPercent: Math.max(0, 100 - Number(rateLimits.primary.used_percent || 0)),
++          windowMinutes: primaryWindow,
++          resetsAt: Number(rateLimits.primary.resets_at || 0),
++          label: labelForWindow(primaryWindow),
++        }
++      : null,
++    secondary: rateLimits.secondary
++      ? {
++          usedPercent: Number(rateLimits.secondary.used_percent || 0),
++          remainingPercent: Math.max(0, 100 - Number(rateLimits.secondary.used_percent || 0)),
++          windowMinutes: secondaryWindow,
++          resetsAt: Number(rateLimits.secondary.resets_at || 0),
++          label: labelForWindow(secondaryWindow),
++        }
++      : null,
++  };
++}
++
++function getThreadIdFromFilePath(filePath) {
++  const basename = path.basename(filePath, ".jsonl");
++  const match = basename.match(
++    /([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i
++  );
++  return match ? match[1] : basename;
++}
++
++function extractSessionDetails(filePath, options = {}) {
++  const content = fs.readFileSync(filePath, "utf8");
++  const lines = content.split("\n").filter(Boolean);
++  const timeZone = options.timeZone || Intl.DateTimeFormat().resolvedOptions().timeZone;
++  const details = {
++    filePath,
++    threadId: null,
++    modelProvider: null,
++    latestTimestamp: null,
++    tokenUsage: null,
++    tokenUsageAt: null,
++    rateLimits: null,
++    rateLimitsAt: null,
++    modelName: null,
++    modelAt: null,
++    ledgerEntries: [],
++    modelsUsed: [],
++  };
++  let currentModelName = null;
++  const modelSet = new Set();
++
++  for (const line of lines) {
++    let parsed;
++    try {
++      parsed = JSON.parse(line);
++    } catch {
++      continue;
++    }
++
++    if (parsed.type === "session_meta") {
++      details.threadId = parsed.payload?.id || details.threadId;
++      details.modelProvider = parsed.payload?.model_provider || details.modelProvider;
++      continue;
++    }
++
++    if (parsed.type === "turn_context") {
++      currentModelName = normalizeModelName(parsed.payload?.model) || currentModelName;
++      details.modelName = currentModelName || details.modelName;
++      details.modelAt = parsed.timestamp || details.modelAt;
++      details.latestTimestamp = parsed.timestamp || details.latestTimestamp;
++      if (currentModelName) {
++        modelSet.add(currentModelName);
++      }
++      continue;
++    }
++
++    if (parsed.type === "event_msg" && parsed.payload?.type === "token_count") {
++      details.tokenUsage = normalizeTokenUsage(parsed.payload.info);
++      details.tokenUsageAt = parsed.payload?.info ? parsed.timestamp : details.tokenUsageAt;
++      details.rateLimits = normalizeRateLimits(parsed.payload.rate_limits);
++      details.rateLimitsAt = parsed.payload?.rate_limits ? parsed.timestamp : details.rateLimitsAt;
++      details.latestTimestamp = parsed.timestamp || details.latestTimestamp;
++
++      const incrementalUsage = normalizeLastTokenUsage(parsed.payload.info);
++      if (incrementalUsage) {
++        const cost = estimateCost(incrementalUsage, currentModelName);
++        details.ledgerEntries.push({
++          day: getLocalDayKey(parsed.timestamp, timeZone),
++          timestamp: parsed.timestamp,
++          modelName: currentModelName,
++          tokenUsage: incrementalUsage,
++          cost,
++        });
++      }
++    }
++  }
++
++  details.threadId = details.threadId || getThreadIdFromFilePath(filePath);
++  details.cost = estimateCost(details.tokenUsage, details.modelName);
++  details.modelsUsed = Array.from(modelSet);
++
++  if (!details.tokenUsage && !details.rateLimits && !details.modelName) {
++    return null;
++  }
++
++  return details;
++}
++
++function mergeSessionDetails(existing, incoming) {
++  if (!existing) {
++    return incoming;
++  }
++
++  const existingTime = new Date(existing.latestTimestamp || 0).getTime();
++  const incomingTime = new Date(incoming.latestTimestamp || 0).getTime();
++  const existingTokenTime = new Date(existing.tokenUsageAt || 0).getTime();
++  const incomingTokenTime = new Date(incoming.tokenUsageAt || 0).getTime();
++  const existingRateLimitTime = new Date(existing.rateLimitsAt || 0).getTime();
++  const incomingRateLimitTime = new Date(incoming.rateLimitsAt || 0).getTime();
++  const existingModelTime = new Date(existing.modelAt || 0).getTime();
++  const incomingModelTime = new Date(incoming.modelAt || 0).getTime();
++  const merged = {
++    ...existing,
++    ...incoming,
++    latestTimestamp: incomingTime >= existingTime ? incoming.latestTimestamp : existing.latestTimestamp,
++    tokenUsage:
++      incoming.tokenUsage && incomingTokenTime >= existingTokenTime
++        ? incoming.tokenUsage
++        : existing.tokenUsage,
++    tokenUsageAt:
++      incoming.tokenUsage && incomingTokenTime >= existingTokenTime
++        ? incoming.tokenUsageAt
++        : existing.tokenUsageAt,
++    rateLimits:
++      incoming.rateLimits && incomingRateLimitTime >= existingRateLimitTime
++        ? incoming.rateLimits
++        : existing.rateLimits,
++    rateLimitsAt:
++      incoming.rateLimits && incomingRateLimitTime >= existingRateLimitTime
++        ? incoming.rateLimitsAt
++        : existing.rateLimitsAt,
++    modelName:
++      incoming.modelName && incomingModelTime >= existingModelTime
++        ? incoming.modelName
++        : existing.modelName,
++    modelAt:
++      incoming.modelName && incomingModelTime >= existingModelTime
++        ? incoming.modelAt
++        : existing.modelAt,
++  };
++
++  merged.cost = estimateCost(merged.tokenUsage, merged.modelName);
++  return merged;
++}
++
++function buildRecentSessionMap(sessionsDir, archivedSessionsDir, fileLimit = 40) {
++  const files = [
++    ...listJsonlFiles(sessionsDir),
++    ...listJsonlFiles(archivedSessionsDir),
++  ]
++    .sort((left, right) => right.mtimeMs - left.mtimeMs)
++    .slice(0, fileLimit);
++
++  const byThreadId = new Map();
++
++  for (const file of files) {
++    const details = extractSessionDetails(file.path);
++    if (!details?.threadId) {
++      continue;
++    }
++
++    byThreadId.set(details.threadId, mergeSessionDetails(byThreadId.get(details.threadId), details));
++  }
++
++  return byThreadId;
++}
++
++function buildDailyLedger(sessionsDir, archivedSessionsDir, options = {}) {
++  const files = [
++    ...listJsonlFiles(sessionsDir),
++    ...listJsonlFiles(archivedSessionsDir),
++  ].sort((left, right) => left.mtimeMs - right.mtimeMs);
++
++  const byDay = new Map();
++  const usedModels = new Set();
++
++  for (const file of files) {
++    const details = extractSessionDetails(file.path, options);
++    for (const modelName of details?.modelsUsed || []) {
++      usedModels.add(modelName);
++    }
++    for (const entry of details?.ledgerEntries || []) {
++      const existing = byDay.get(entry.day) || {
++        day: entry.day,
++        totalTokens: 0,
++        inputTokens: 0,
++        cachedInputTokens: 0,
++        outputTokens: 0,
++        totalUsd: 0,
++      };
++
++      existing.totalTokens += entry.tokenUsage.totalTokens;
++      existing.inputTokens += entry.tokenUsage.inputTokens;
++      existing.cachedInputTokens += entry.tokenUsage.cachedInputTokens;
++      existing.outputTokens += entry.tokenUsage.outputTokens;
++      existing.totalUsd += entry.cost?.totalUsd || 0;
++      byDay.set(entry.day, existing);
++    }
++  }
++
++  return {
++    rows: Array.from(byDay.values()).sort((left, right) => right.day.localeCompare(left.day)),
++    usedModels: Array.from(usedModels).sort(),
++  };
++}
++
++function getLatestLiveEvent(sessionMap) {
++  let latestTokenUsage = null;
++  let latestRateLimits = null;
++
++  for (const candidate of sessionMap.values()) {
++    const candidateTimestamp = new Date(candidate.latestTimestamp || 0).getTime();
++
++    if (
++      candidate.tokenUsage &&
++      (!latestTokenUsage ||
++        candidateTimestamp > new Date(latestTokenUsage.latestTimestamp || 0).getTime())
++    ) {
++      latestTokenUsage = candidate;
++    }
++
++    if (
++      candidate.rateLimits &&
++      (!latestRateLimits ||
++        candidateTimestamp > new Date(latestRateLimits.latestTimestamp || 0).getTime())
++    ) {
++      latestRateLimits = candidate;
++    }
++  }
++
++  return {
++    currentSession: latestTokenUsage
++      ? {
++          timestamp: latestTokenUsage.latestTimestamp,
++          filePath: latestTokenUsage.filePath,
++          tokenUsage: latestTokenUsage.tokenUsage,
++          modelName: latestTokenUsage.modelName,
++          cost: latestTokenUsage.cost,
++        }
++      : null,
++    rateLimits: latestRateLimits
++      ? {
++          timestamp: latestRateLimits.latestTimestamp,
++          filePath: latestRateLimits.filePath,
++          rateLimits: latestRateLimits.rateLimits,
++        }
++      : null,
++  };
++}
++
++async function loadSnapshot(options = {}) {
++  const paths = resolveCodexPaths(options.codexHome);
++  const timeZone = options.timeZone || Intl.DateTimeFormat().resolvedOptions().timeZone;
++  const recentSessionMap = buildRecentSessionMap(
++    paths.sessionsDir,
++    paths.archivedSessionsDir,
++    options.recentSessionFileLimit || 40
++  );
++  const dailyLedger = buildDailyLedger(paths.sessionsDir, paths.archivedSessionsDir, { timeZone });
++  const latestLiveEvent = getLatestLiveEvent(recentSessionMap);
++  const overview = getThreadSummary(paths.stateDbPath);
++  overview.totalEstimatedCost = dailyLedger.rows.reduce((sum, item) => sum + item.totalUsd, 0);
++  const pricingCatalog = dailyLedger.usedModels
++    .map((modelName) => {
++      const pricing = getPricingForModel(modelName);
++      return pricing
++        ? {
++            modelName,
++            pricingModelName: pricing.pricingModelName,
++            inputPerMillion: pricing.inputPerMillion,
++            cachedInputPerMillion: pricing.cachedInputPerMillion,
++            outputPerMillion: pricing.outputPerMillion,
++            sourceType: pricing.sourceType,
++            sourceLabel: pricing.sourceLabel,
++            sourceUrl: pricing.sourceUrl,
++          }
++        : {
++            modelName,
++            pricingModelName: null,
++            inputPerMillion: null,
++            cachedInputPerMillion: null,
++            outputPerMillion: null,
++            sourceType: "missing",
++            sourceLabel: "没有找到价格映射",
++            sourceUrl: null,
++          };
++    })
++    .sort((left, right) => left.modelName.localeCompare(right.modelName));
++  const recentThreads = getRecentThreads(paths.stateDbPath, options.recentThreadsLimit || 10).map(
++    (thread) => {
++      const sessionDetails = recentSessionMap.get(thread.id);
++      return {
++        ...thread,
++        modelName: sessionDetails?.modelName || null,
++        tokenUsage: sessionDetails?.tokenUsage || null,
++        cost: sessionDetails?.cost || null,
++      };
++    }
++  );
++  const dailyUsage = getDailyUsage(paths.stateDbPath, options.dailyUsageLimit || 14);
++
++  return {
++    generatedAt: (options.now || new Date()).toISOString(),
++    sources: {
++      codexHome: paths.codexHome,
++      stateDbPath: paths.stateDbPath,
++      sessionsDir: paths.sessionsDir,
++      archivedSessionsDir: paths.archivedSessionsDir,
++    },
++    overview,
++    dailyLedger: dailyLedger.rows,
++    pricingCatalog,
++    live: {
++      currentSession: latestLiveEvent.currentSession
++        ? {
++            ...latestLiveEvent.currentSession.tokenUsage,
++            modelName: latestLiveEvent.currentSession.modelName,
++            cost: latestLiveEvent.currentSession.cost,
++          }
++        : null,
++      rateLimits: latestLiveEvent.rateLimits?.rateLimits || null,
++      latestEventAt: latestLiveEvent.currentSession?.timestamp || null,
++      latestEventFile: latestLiveEvent.currentSession?.filePath || null,
++      latestRateLimitAt: latestLiveEvent.rateLimits?.timestamp || null,
++      latestRateLimitFile: latestLiveEvent.rateLimits?.filePath || null,
++    },
++    recentThreads,
++    dailyUsage,
++  };
++}
++
++module.exports = {
++  loadSnapshot,
++  normalizeTokenUsage,
++  normalizeRateLimits,
++  extractSessionDetails,
++};
+diff --git a/test/app.test.js b/test/app.test.js
+new file mode 100644
+index 0000000..85479d5
+--- /dev/null
++++ b/test/app.test.js
+@@ -0,0 +1,106 @@
++const test = require("node:test");
++const assert = require("node:assert/strict");
++const fs = require("node:fs");
++const os = require("node:os");
++const path = require("node:path");
++const { execFileSync } = require("node:child_process");
++
++const { createAppServer } = require("../server/app");
++
++function createFixtureCodexHome() {
++  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "codex-http-"));
++  const codexHome = path.join(tempDir, ".codex");
++  const dbPath = path.join(codexHome, "state_5.sqlite");
++  const sessionPath = path.join(
++    codexHome,
++    "sessions",
++    "2026",
++    "03",
++    "08",
++    "rollout-2026-03-08T12-01-58-thread-9.jsonl"
++  );
++
++  fs.mkdirSync(path.dirname(dbPath), { recursive: true });
++  execFileSync("sqlite3", [
++    dbPath,
++    `
++      CREATE TABLE threads (
++        id TEXT PRIMARY KEY,
++        rollout_path TEXT NOT NULL,
++        created_at INTEGER NOT NULL,
++        updated_at INTEGER NOT NULL,
++        source TEXT NOT NULL,
++        model_provider TEXT NOT NULL,
++        cwd TEXT NOT NULL,
++        title TEXT NOT NULL,
++        sandbox_policy TEXT NOT NULL,
++        approval_mode TEXT NOT NULL,
++        tokens_used INTEGER NOT NULL DEFAULT 0,
++        has_user_event INTEGER NOT NULL DEFAULT 0,
++        archived INTEGER NOT NULL DEFAULT 0,
++        archived_at INTEGER
++      );
++      INSERT INTO threads (
++        id, rollout_path, created_at, updated_at, source, model_provider, cwd, title,
++        sandbox_policy, approval_mode, tokens_used, has_user_event, archived, archived_at
++      ) VALUES
++        ('thread-9', '/tmp/live.jsonl', 1772940000, 1772940300, 'vscode', 'openai', '/workspace/a', 'live thread', 'danger', 'never', 2200, 1, 0, NULL);
++    `,
++  ]);
++
++  fs.mkdirSync(path.dirname(sessionPath), { recursive: true });
++  fs.writeFileSync(
++    sessionPath,
++    JSON.stringify({
++      timestamp: "2026-03-08T04:02:59.064Z",
++      type: "event_msg",
++      payload: {
++        type: "token_count",
++        info: {
++          total_token_usage: { total_tokens: 2200, input_tokens: 1000, cached_input_tokens: 0, output_tokens: 1200, reasoning_output_tokens: 0 },
++          last_token_usage: { total_tokens: 300, input_tokens: 120, cached_input_tokens: 0, output_tokens: 180, reasoning_output_tokens: 0 },
++          model_context_window: 950000,
++        },
++        rate_limits: {
++          limit_id: "codex",
++          plan_type: "pro",
++          primary: { used_percent: 4, window_minutes: 300, resets_at: 1772950000 },
++        },
++      },
++    })
++  );
++
++  return codexHome;
++}
++
++test("snapshot endpoint returns normalized JSON and stream endpoint exposes SSE", async () => {
++  const codexHome = createFixtureCodexHome();
++  const server = createAppServer({ codexHome, refreshIntervalMs: 50 });
++
++  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
++  const { port } = server.address();
++
++  try {
++    const snapshotResponse = await fetch(`http://127.0.0.1:${port}/api/snapshot`);
++    assert.equal(snapshotResponse.status, 200);
++
++    const snapshot = await snapshotResponse.json();
++    assert.equal(snapshot.overview.totalTokens, 2200);
++    assert.equal(snapshot.live.rateLimits.planType, "pro");
++
++    const pageResponse = await fetch(`http://127.0.0.1:${port}/`);
++    assert.equal(pageResponse.status, 200);
++    assert.match(pageResponse.headers.get("content-type"), /text\/html/);
++
++    const assetResponse = await fetch(`http://127.0.0.1:${port}/app.js`);
++    assert.equal(assetResponse.status, 200);
++    assert.match(assetResponse.headers.get("content-type"), /application\/javascript/);
++
++    const streamResponse = await fetch(`http://127.0.0.1:${port}/api/stream`);
++    assert.equal(streamResponse.status, 200);
++    assert.match(streamResponse.headers.get("content-type"), /text\/event-stream/);
++    streamResponse.body.cancel();
++  } finally {
++    await new Promise((resolve, reject) => server.close((error) => (error ? reject(error) : resolve())));
++  }
++});
+diff --git a/test/dashboardView.test.js b/test/dashboardView.test.js
+new file mode 100644
+index 0000000..1f86195
+--- /dev/null
++++ b/test/dashboardView.test.js
+@@ -0,0 +1,20 @@
++const test = require("node:test");
++const assert = require("node:assert/strict");
++
++const {
++  formatTokenMillions,
++  formatPercent,
++  formatResetTime,
++  formatUsd,
++} = require("../public/app.js");
++
++test("dashboard formatters render readable token and quota values", () => {
++  assert.equal(formatTokenMillions(35000000), "35M");
++  assert.equal(formatTokenMillions(5013157), "5.01M");
++  assert.equal(formatPercent(12), "12%");
++  assert.equal(formatUsd(0.005363), "$0.0054");
++  assert.match(
++    formatResetTime(1772950000),
++    /2026|03|08|09/
++  );
++});
+diff --git a/test/usageRepository.test.js b/test/usageRepository.test.js
+new file mode 100644
+index 0000000..a3cb9bb
+--- /dev/null
++++ b/test/usageRepository.test.js
+@@ -0,0 +1,190 @@
++const test = require("node:test");
++const assert = require("node:assert/strict");
++const fs = require("node:fs");
++const os = require("node:os");
++const path = require("node:path");
++const { execFileSync } = require("node:child_process");
++
++const { loadSnapshot } = require("../server/lib/usageRepository");
++
++function writeJsonl(filePath, rows) {
++  fs.mkdirSync(path.dirname(filePath), { recursive: true });
++  fs.writeFileSync(filePath, rows.map((row) => JSON.stringify(row)).join("\n"));
++}
++
++function createSqliteDb(dbPath) {
++  fs.mkdirSync(path.dirname(dbPath), { recursive: true });
++  execFileSync("sqlite3", [
++    dbPath,
++    `
++      CREATE TABLE threads (
++        id TEXT PRIMARY KEY,
++        rollout_path TEXT NOT NULL,
++        created_at INTEGER NOT NULL,
++        updated_at INTEGER NOT NULL,
++        source TEXT NOT NULL,
++        model_provider TEXT NOT NULL,
++        cwd TEXT NOT NULL,
++        title TEXT NOT NULL,
++        sandbox_policy TEXT NOT NULL,
++        approval_mode TEXT NOT NULL,
++        tokens_used INTEGER NOT NULL DEFAULT 0,
++        has_user_event INTEGER NOT NULL DEFAULT 0,
++        archived INTEGER NOT NULL DEFAULT 0,
++        archived_at INTEGER
++      );
++      INSERT INTO threads (
++        id, rollout_path, created_at, updated_at, source, model_provider, cwd, title,
++        sandbox_policy, approval_mode, tokens_used, has_user_event, archived, archived_at
++      ) VALUES
++        ('thread-1', '/tmp/rollout-1.jsonl', 1772940000, 1772940300, 'vscode', 'openai', '/workspace/a', 'first thread', 'danger', 'never', 1200, 1, 0, NULL),
++        ('thread-2', '/tmp/rollout-2.jsonl', 1772940600, 1772940900, 'vscode', 'openai', '/workspace/b', 'second thread', 'danger', 'never', 3400, 1, 0, NULL);
++    `,
++  ]);
++}
++
++test("loadSnapshot aggregates sqlite history and latest live token/rate-limit events", async () => {
++  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "codex-usage-"));
++  const codexHome = path.join(tempDir, ".codex");
++  const dbPath = path.join(codexHome, "state_5.sqlite");
++  const sessionPath = path.join(
++    codexHome,
++    "sessions",
++    "2026",
++    "03",
++    "08",
++    "rollout-2026-03-08T12-01-58-thread-2.jsonl"
++  );
++
++  createSqliteDb(dbPath);
++  writeJsonl(sessionPath, [
++    {
++      timestamp: "2026-03-08T04:02:12.257Z",
++      type: "session_meta",
++      payload: {
++        id: "thread-2",
++        model_provider: "openai",
++      },
++    },
++    {
++      timestamp: "2026-03-08T04:02:14.470Z",
++      type: "turn_context",
++      payload: {
++        turn_id: "turn-1",
++        model: "gpt-5-codex",
++      },
++    },
++    {
++      timestamp: "2026-03-08T04:02:59.064Z",
++      type: "event_msg",
++      payload: {
++        type: "token_count",
++        info: {
++          total_token_usage: {
++            input_tokens: 1200,
++            cached_input_tokens: 300,
++            output_tokens: 400,
++            reasoning_output_tokens: 50,
++            total_tokens: 1600,
++          },
++          last_token_usage: {
++            input_tokens: 200,
++            cached_input_tokens: 100,
++            output_tokens: 50,
++            reasoning_output_tokens: 10,
++            total_tokens: 250,
++          },
++          model_context_window: 950000,
++        },
++        rate_limits: {
++          limit_id: "codex",
++          primary: {
++            used_percent: 12,
++            window_minutes: 300,
++            resets_at: 1772950000,
++          },
++          secondary: {
++            used_percent: 37,
++            window_minutes: 10080,
++            resets_at: 1773200000,
++          },
++          credits: null,
++          plan_type: "pro",
++        },
++      },
++    },
++  ]);
++  writeJsonl(
++    path.join(
++      codexHome,
++    "sessions",
++    "2026",
++    "03",
++    "08",
++    "rollout-2026-03-08T12-05-00-thread-2.jsonl"
++  ),
++  [
++      {
++        timestamp: "2026-03-08T04:04:10.000Z",
++        type: "session_meta",
++        payload: {
++          id: "thread-2",
++          model_provider: "openai",
++        },
++      },
++      {
++        timestamp: "2026-03-08T04:04:12.000Z",
++        type: "turn_context",
++        payload: {
++          turn_id: "turn-2",
++          model: "gpt-5-codex",
++        },
++      },
++      {
++        timestamp: "2026-03-08T04:05:00.000Z",
++        type: "event_msg",
++        payload: {
++          type: "token_count",
++          info: {
++            total_token_usage: {
++              input_tokens: 1800,
++              cached_input_tokens: 500,
++              output_tokens: 600,
++              reasoning_output_tokens: 90,
++              total_tokens: 2400,
++            },
++            last_token_usage: {
++              input_tokens: 300,
++              cached_input_tokens: 120,
++              output_tokens: 80,
++              reasoning_output_tokens: 20,
++              total_tokens: 380,
++            },
++            model_context_window: 950000,
++          },
++          rate_limits: null,
++        },
++      },
++    ]
++  );
++
++  const snapshot = await loadSnapshot({ codexHome, now: new Date("2026-03-08T04:10:00.000Z") });
++
++  assert.equal(snapshot.overview.totalThreads, 2);
++  assert.equal(snapshot.overview.totalTokens, 4600);
++  assert.ok(Math.abs(snapshot.overview.totalEstimatedCost - 0.0019525) < 0.000001);
++  assert.equal(snapshot.live.currentSession.totalTokens, 2400);
++  assert.equal(snapshot.live.currentSession.lastTokens, 380);
++  assert.equal(snapshot.live.currentSession.modelName, "gpt-5-codex");
++  assert.ok(Math.abs(snapshot.live.currentSession.cost.totalUsd - 0.0083125) < 0.000001);
++  assert.equal(snapshot.live.rateLimits.planType, "pro");
++  assert.equal(snapshot.live.rateLimits.primary.label, "5小时窗口");
++  assert.equal(snapshot.live.rateLimits.primary.usedPercent, 12);
++  assert.equal(snapshot.recentThreads[0].id, "thread-2");
++  assert.equal(snapshot.recentThreads[0].modelName, "gpt-5-codex");
++  assert.equal(snapshot.dailyUsage[0].totalTokens, 4600);
++  assert.equal(snapshot.dailyLedger[0].totalTokens, 630);
++  assert.ok(Math.abs(snapshot.dailyLedger[0].totalUsd - 0.0019525) < 0.000001);
++  assert.equal(snapshot.pricingCatalog[0].modelName, "gpt-5-codex");
++  assert.equal(snapshot.pricingCatalog[0].inputPerMillion, 1.25);
++});
