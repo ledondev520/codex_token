@@ -1,7 +1,7 @@
 {
   "name": "codex-usage-dashboard",
   "version": "0.1.0",
-  "private": true,
+  "license": "MIT",
   "description": "Standalone local dashboard for Codex token usage and quota snapshots.",
   "scripts": {
     "start": "node server/index.js",
