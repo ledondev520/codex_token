@@ -1,0 +1,2320 @@
+diff --git a/METRICS.md b/METRICS.md
+index 2f13c00..e17cf5d 100644
+--- a/METRICS.md
++++ b/METRICS.md
+@@ -1,6 +1,6 @@
+ # Metrics
+ 
+-Last updated: 2026-03-08 18:05 Asia/Shanghai
++Last updated: 2026-03-08 19:15 Asia/Shanghai
+ 
+ | Round | Metric | Value | Notes |
+ | --- | --- | --- | --- |
+@@ -20,3 +20,12 @@ Last updated: 2026-03-08 18:05 Asia/Shanghai
+ | 4 | GitHub bootstrap audit | parent repo detected | `git rev-parse --show-toplevel` returned `/Users/helena` before isolation |
+ | 4 | Git repo isolation | pass | `git init` created `/Users/helena/Cursor/codex_token/.git` and top-level now resolves locally |
+ | 4 | Automated tests | 3 passing | `npm test` on 2026-03-08 18:04 Asia/Shanghai during Git bootstrap |
++| 5 | Automated tests | 7 passing | `npm test` on 2026-03-08 18:37 Asia/Shanghai after dashboard refinement |
++| 5 | Browser smoke test | pass | Playwright verified plan badge, pricing merge, tab switch, hover tooltip, and `GPT-5.4` label on 2026-03-08 |
++| 5 | Runtime source switching | enabled | `POST /api/source` updates `codexHome` without restarting the server |
++| 5 | Pricing table grouping | enabled | identical unit-price models collapse into one row |
++| 6 | Raw local rate-limit snapshot | 4% used / 4% used | latest local `rate_limits` event inspected from `~/.codex` on 2026-03-08 18:45 Asia/Shanghai |
++| 6 | Automated tests | 8 passing | `npm test` on 2026-03-08 18:48 Asia/Shanghai after rate-limit selection fix |
++| 7 | Automated tests | 9 passing | `npm test` on 2026-03-08 19:11 Asia/Shanghai after billing UX redesign |
++| 7 | Browser smoke test | pass | verified natural-month toggle, draggable range sliders, billing table headers, and deduped `GPT-5.4` pricing row on `http://127.0.0.1:4326` |
++| 7 | Billing scope switch | enabled | billing tab supports `累计` and `自然月` totals for fee and token |
+diff --git a/PLAN.md b/PLAN.md
+index 552edf9..a5978d4 100644
+--- a/PLAN.md
++++ b/PLAN.md
+@@ -1,6 +1,6 @@
+ # Codex Usage Dashboard Plan
+ 
+-Last updated: 2026-03-08 18:03 Asia/Shanghai
++Last updated: 2026-03-08 19:15 Asia/Shanghai
+ 
+ ## Goal
+ 
+@@ -12,7 +12,10 @@ Build a standalone local web dashboard in this workspace that reads `~/.codex` u
+ 2. Build a Node.js backend that aggregates SQLite + session JSONL data. Completed.
+ 3. Build a local frontend dashboard with live refresh. Completed.
+ 4. Verify tests, startup flow, and browser behavior. Completed.
+-5. Prepare the workspace as an independent Git repository with GitHub publication prerequisites. In progress.
++5. Prepare the workspace as an independent Git repository with GitHub publication prerequisites. Completed.
++6. Refine dashboard interaction model: grouped pricing, source picker, combined billing chart, and reset progress cues. Completed.
++7. Correct live rate-limit selection so windows reflect the newest status snapshot. Completed.
++8. Rework billing analytics UX with scope switching, a brushable time range, and a real ledger table. Completed.
+ 
+ ## Architecture
+ 
+@@ -40,6 +43,7 @@ Build a standalone local web dashboard in this workspace that reads `~/.codex` u
+ 
+ ## Current Phase
+ 
+-- Isolate this workspace from the accidental parent Git repository rooted at `/Users/helena/.git`.
+-- Add missing repository metadata needed for GitHub publication: `.gitignore` and `README.md`.
+-- Initialize a local repository, create the first commit, and stop at the GitHub authentication boundary if credentials are unavailable.
++- Dashboard refinement round is complete and verified.
++- The app now supports grouped pricing rows, top-level plan display, reset-progress feedback, tabbed recent sessions vs billing, hoverable combined chart, and runtime source-path switching.
++- Live rate-limit selection now keys off `rateLimitsAt`, avoiding stale 5-hour / 7-day values from later non-rate-limit token events.
++- Billing tab redesign is complete: dual-axis chart scaffolding, cumulative vs. natural-month switching, drag-adjustable time range, and a headed ledger table.
+diff --git a/RISKS.md b/RISKS.md
+index da73fd3..f19b92e 100644
+--- a/RISKS.md
++++ b/RISKS.md
+@@ -1,6 +1,6 @@
+ # Risks
+ 
+-Last updated: 2026-03-08 18:03 Asia/Shanghai
++Last updated: 2026-03-08 19:15 Asia/Shanghai
+ 
+ | ID | Risk | Trigger | Mitigation | Rollback |
+ | --- | --- | --- | --- | --- |
+@@ -8,3 +8,6 @@ Last updated: 2026-03-08 18:03 Asia/Shanghai
+ | R2 | Session JSONL parsing is expensive | many archived sessions or large files | parse recent files first, cache results, expose refresh interval | disable live details and keep SQLite-only view |
+ | R3 | File watching misses updates | OS-specific watcher behavior | use timed refresh plus SSE | revert to client polling only |
+ | R4 | Project is currently inside a parent Git repository rooted at `/Users/helena` | running Git from this workspace shows home-directory files | initialize a nested repo in this workspace before any add/commit/push | do not run `git add .` against the parent repo |
++| R5 | User-selected path is invalid or not a Codex directory | UI submits a folder without `state_5.sqlite` | validate path server-side and return a Chinese error message without changing the current source | keep previous `codexHome` and ask user to reselect |
++| R6 | Latest thread activity can mask older quota snapshots | a thread gets newer token events after an older `rate_limits` event | compare quota freshness using `rateLimitsAt` instead of thread `latestTimestamp` | fall back to the newest explicit rate-limit event only |
++| R7 | Ledger range controls can become confusing when the selected scope has few days | switching from cumulative to month shrinks the available time window | reset/clamp slider bounds per scope and show explicit selected date labels | revert to fixed presets only if manual range controls prove too error-prone |
+diff --git a/TASKS.md b/TASKS.md
+index ec5ac61..679220b 100644
+--- a/TASKS.md
++++ b/TASKS.md
+@@ -1,6 +1,6 @@
+ # Tasks
+ 
+-Last updated: 2026-03-08 18:05 Asia/Shanghai
++Last updated: 2026-03-08 19:15 Asia/Shanghai
+ 
+ | ID | Priority | Est | Slot | Status | Task | Input | Output | Validation | DoD |
+ | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+@@ -12,3 +12,6 @@ Last updated: 2026-03-08 18:05 Asia/Shanghai
+ | T6 | P0 | 15m | 1 | DONE | Final verification and evidence files | full app | results/metrics | `npm test`, startup smoke | evidence recorded |
+ | T7 | P0 | 20m | 1 | DONE | Add model pricing, cost estimate, Chinese UI, and M-unit formatting | session model fields + OpenAI pricing | enriched dashboard | `npm test` and browser smoke | model/cost/limits visible and layout stable |
+ | T8 | P0 | 15m | 1 | DONE | Bootstrap standalone Git repo and GitHub publication metadata | current workspace | independent repo, README, ignore rules, initial commit | `npm test`, `git status --short --branch` | project is safe to push without leaking parent home directory files |
++| T9 | P0 | 20m | 1 | DONE | Refine dashboard pricing, tabs, combined chart, plan badge, reset progress, and selectable Codex home | current dashboard + live snapshot service | updated UI, mutable source endpoint, regression tests, checkpoint docs | `npm test` and browser smoke | requested UX and data-source behaviors are implemented and verified |
++| T10 | P0 | 10m | 1 | DONE | Fix stale rate-limit snapshot selection | current live snapshot selection logic | rate limit chooser uses actual rate-limit timestamps | `npm test` and local snapshot inspection | dashboard window percentages match latest local status event |
++| T11 | P0 | 20m | 1 | DONE | Redesign billing analytics view with scope toggle, range brush, and table headers | current billing tab UI | clearer chart, selectable date range, cumulative/month switch, tabular ledger | `npm test` and browser smoke | billing tab is easier to read and supports fast time-range filtering |
+diff --git a/public/app.js b/public/app.js
+index 59561b5..5e5f9f1 100644
+--- a/public/app.js
++++ b/public/app.js
+@@ -1,4 +1,11 @@
+ (function bootstrap(globalScope) {
++  const dashboardState = {
++    billingScope: "cumulative",
++    rangeStart: 0,
++    rangeEnd: 0,
++    snapshot: null,
++  };
++
+   function formatTokenMillions(value) {
+     const tokenValue = Number(value || 0);
+     const inMillions = tokenValue / 1_000_000;
+@@ -49,7 +56,35 @@
+       return "-";
+     }
+ 
+-    return `$${Number(value).toFixed(4)}`;
++    return `$${Number(value).toFixed(2)}`;
++  }
++
++  function formatPricePerMillion(value) {
++    if (value === null || value === undefined) {
++      return "-";
++    }
++
++    return `$${Number(value).toFixed(2)}/M`;
++  }
++
++  function formatPlanName(value) {
++    if (!value) {
++      return "未知";
++    }
++
++    return String(value).toUpperCase();
++  }
++
++  function formatModelLabel(modelName) {
++    if (!modelName) {
++      return "未知模型";
++    }
++
++    if (String(modelName).toLowerCase() === "gpt-5.4-codex") {
++      return "GPT-5.4";
++    }
++
++    return String(modelName);
+   }
+ 
+   function clampPercent(value) {
+@@ -65,89 +100,204 @@
+       .replaceAll("'", "&#39;");
+   }
+ 
+-  function buildLineChartMarkup(rows, options) {
++  function calculateResetProgress({ generatedAt, resetsAt, windowMinutes }) {
++    if (!generatedAt || !resetsAt || !windowMinutes) {
++      return {
++        elapsedPercent: null,
++        remainingPercent: null,
++      };
++    }
++
++    const resetTimeMs = Number(resetsAt) * 1000;
++    const windowDurationMs = Number(windowMinutes) * 60 * 1000;
++    const startTimeMs = resetTimeMs - windowDurationMs;
++    const nowMs = new Date(generatedAt).getTime();
++    const elapsedMs = Math.max(0, Math.min(windowDurationMs, nowMs - startTimeMs));
++    const elapsedPercent = Math.round((elapsedMs / windowDurationMs) * 100);
++
++    return {
++      elapsedPercent,
++      remainingPercent: Math.max(0, 100 - elapsedPercent),
++    };
++  }
++
++  function getScopeRows(rows, generatedAt, scope) {
++    if (scope !== "month") {
++      return [...rows];
++    }
++
++    const generatedDate = new Date(generatedAt || Date.now());
++    const monthKey = `${generatedDate.getFullYear()}-${String(generatedDate.getMonth() + 1).padStart(
++      2,
++      "0"
++    )}`;
++
++    return rows.filter((row) => String(row.day || "").startsWith(monthKey));
++  }
++
++  function summarizeLedgerRows(rows) {
++    return rows.reduce(
++      (summary, row) => {
++        summary.totalTokens += Number(row.totalTokens || 0);
++        summary.totalUsd += Number(row.totalUsd || 0);
++        return summary;
++      },
++      { totalTokens: 0, totalUsd: 0 }
++    );
++  }
++
++  function normalizeRangeBounds(length, startIndex, endIndex) {
++    if (!length) {
++      return { startIndex: 0, endIndex: 0 };
++    }
++
++    const maxIndex = length - 1;
++    const left = Math.max(0, Math.min(maxIndex, Number(startIndex || 0)));
++    const right = Math.max(0, Math.min(maxIndex, Number(endIndex ?? maxIndex)));
++
++    return {
++      startIndex: Math.min(left, right),
++      endIndex: Math.max(left, right),
++    };
++  }
++
++  function getVisibleLedgerRows(rows, startIndex, endIndex) {
++    const chronologicalRows = [...rows].sort((left, right) => left.day.localeCompare(right.day));
++    const bounds = normalizeRangeBounds(chronologicalRows.length, startIndex, endIndex);
++    return chronologicalRows.slice(bounds.startIndex, bounds.endIndex + 1).reverse();
++  }
++
++  function buildScaledPoints(rows, field, maxValue) {
++    const pointGap = rows.length > 1 ? 100 / (rows.length - 1) : 100;
++
++    return rows.map((row, index) => {
++      const x = rows.length > 1 ? index * pointGap : 50;
++      const ratio = maxValue ? row[field] / maxValue : 0;
++      const y = 100 - Math.max(10, ratio * 78);
++      return { row, x, y };
++    });
++  }
++
++  function buildAxisLabels(maxValue, formatter) {
++    return [1, 0.5, 0].map((ratio) => formatter(maxValue * ratio));
++  }
++
++  function buildCombinedChartMarkup(rows) {
+     if (!rows.length) {
+-      return "没有数据";
++      return "没有每日账单数据";
+     }
+ 
+     const chronologicalRows = [...rows].reverse();
+-    const maxValue = Math.max(...chronologicalRows.map((row) => row[options.field]), 0.0001);
+-    const pointGap = chronologicalRows.length > 1 ? 100 / (chronologicalRows.length - 1) : 100;
+-    const points = chronologicalRows
+-      .map(
+-        (row, index) =>
+-          `${index * pointGap},${100 - Math.max(6, (row[options.field] / maxValue) * 88)}`
+-      )
+-      .join(" ");
++    const tokenMaxValue = Math.max(...chronologicalRows.map((row) => row.totalTokens), 0.0001);
++    const costMaxValue = Math.max(...chronologicalRows.map((row) => row.totalUsd), 0.0001);
++    const tokenPoints = buildScaledPoints(chronologicalRows, "totalTokens", tokenMaxValue);
++    const costPoints = buildScaledPoints(chronologicalRows, "totalUsd", costMaxValue);
++    const tokenPolyline = tokenPoints.map((point) => `${point.x},${point.y}`).join(" ");
++    const costPolyline = costPoints.map((point) => `${point.x},${point.y}`).join(" ");
++    const tokenAxisLabels = buildAxisLabels(tokenMaxValue, formatTokenMillions);
++    const costAxisLabels = buildAxisLabels(costMaxValue, formatUsd);
+ 
+     return `
+-      <svg viewBox="0 0 100 100" preserveAspectRatio="none" class="line-chart">
+-        <line x1="0" y1="88" x2="100" y2="88" class="chart-axis"></line>
+-        <polyline points="${points}" class="chart-line ${options.lineClass || ""}"></polyline>
+-      </svg>
++      <div class="chart-grid-shell">
++        <div class="chart-y-axis chart-y-axis-token">
++          ${tokenAxisLabels.map((label) => `<span>${escapeHtml(label)}</span>`).join("")}
++        </div>
++        <div class="chart-stage">
++          <svg viewBox="0 0 100 100" preserveAspectRatio="none" class="line-chart">
++            <line x1="0" y1="88" x2="100" y2="88" class="chart-axis"></line>
++            <line x1="0" y1="49" x2="100" y2="49" class="chart-axis chart-axis-mid"></line>
++            <polyline points="${tokenPolyline}" class="chart-line chart-line-token"></polyline>
++            <polyline points="${costPolyline}" class="chart-line chart-line-cost"></polyline>
++            ${tokenPoints
++              .map(
++                (point) =>
++                  `<circle cx="${point.x}" cy="${point.y}" r="1.7" class="chart-point-token"></circle>`
++              )
++              .join("")}
++            ${costPoints
++              .map(
++                (point) =>
++                  `<circle cx="${point.x}" cy="${point.y}" r="1.7" class="chart-point-cost"></circle>`
++              )
++              .join("")}
++          </svg>
++          <div class="chart-hover-grid">
++            ${chronologicalRows
++              .map((row, index) => {
++                const left =
++                  chronologicalRows.length > 1 ? index * (100 / (chronologicalRows.length - 1)) : 50;
++                return `
++                  <button
++                    type="button"
++                    class="chart-tooltip-target"
++                    style="left:${left}%"
++                    data-day="${escapeHtml(row.day)}"
++                    data-tokens="${escapeHtml(formatTokenMillions(row.totalTokens))}"
++                    data-cost="${escapeHtml(formatUsd(row.totalUsd))}"
++                  ></button>
++                `;
++              })
++              .join("")}
++          </div>
++          <div class="chart-tooltip"></div>
++        </div>
++        <div class="chart-y-axis chart-y-axis-cost">
++          ${costAxisLabels.map((label) => `<span>${escapeHtml(label)}</span>`).join("")}
++        </div>
++      </div>
+       <div class="chart-legend">
+         <span>${chronologicalRows[0].day} -> ${chronologicalRows[chronologicalRows.length - 1].day}</span>
+-        <strong>峰值 ${options.formatter(maxValue)}</strong>
++        <span class="chart-legend-key chart-legend-token">Token</span>
++        <span class="chart-legend-key chart-legend-cost">费用</span>
++      </div>
++      <div class="chart-brush">
++        <span>${escapeHtml(chronologicalRows[0].day)}</span>
++        <span>拖动下方时间轴可缩放范围</span>
++        <span>${escapeHtml(chronologicalRows[chronologicalRows.length - 1].day)}</span>
+       </div>
+     `;
+   }
+ 
+-  function renderDailyUsage(snapshot) {
+-    const tokenChartContainer = document.getElementById("token-chart");
+-    const costChartContainer = document.getElementById("cost-chart");
+-    const ledgerContainer = document.getElementById("daily-ledger");
+-    const rows = snapshot.dailyLedger || [];
++  function bindCombinedChartInteractions(container) {
++    if (!container || !container.querySelectorAll) {
++      return;
++    }
+ 
+-    if (!rows.length) {
+-      tokenChartContainer.innerHTML = "没有每日账单数据";
+-      costChartContainer.innerHTML = "没有每日账单数据";
+-      ledgerContainer.innerHTML = "没有每日账单明细";
+-      tokenChartContainer.className = "line-chart-shell empty-state";
+-      costChartContainer.className = "line-chart-shell empty-state";
+-      ledgerContainer.className = "daily-ledger empty-state";
+-      document.getElementById("daily-total-cost").textContent = "-";
+-      document.getElementById("latest-daily-cost").textContent = "-";
+-      document.getElementById("token-chart-peak").textContent = "-";
+-      document.getElementById("cost-chart-peak").textContent = "-";
++    const tooltip = container.querySelector(".chart-tooltip");
++    const targets = container.querySelectorAll(".chart-tooltip-target");
++
++    if (!tooltip || !targets.length) {
+       return;
+     }
+ 
+-    tokenChartContainer.className = "line-chart-shell";
+-    costChartContainer.className = "line-chart-shell";
+-    tokenChartContainer.innerHTML = buildLineChartMarkup(rows, {
+-      field: "totalTokens",
+-      formatter: formatTokenMillions,
+-      lineClass: "chart-line-token",
+-    });
+-    costChartContainer.innerHTML = buildLineChartMarkup(rows, {
+-      field: "totalUsd",
+-      formatter: formatUsd,
+-      lineClass: "chart-line-cost",
+-    });
++    const showTooltip = (event) => {
++      const target = event.currentTarget;
++      tooltip.innerHTML = `
++        <strong>${escapeHtml(target.dataset.day || "-")}</strong>
++        <span>Token: ${escapeHtml(target.dataset.tokens || "-")}</span>
++        <span>费用: ${escapeHtml(target.dataset.cost || "-")}</span>
++      `;
++      tooltip.classList.add("visible");
++
++      const targetRect = target.getBoundingClientRect();
++      const containerRect = container.getBoundingClientRect();
++      const offsetLeft = Math.max(
++        18,
++        Math.min(containerRect.width - 190, targetRect.left - containerRect.left - 80)
++      );
++      tooltip.style.left = `${offsetLeft}px`;
++    };
+ 
+-    ledgerContainer.className = "daily-ledger";
+-    ledgerContainer.innerHTML = rows
+-      .map(
+-        (row) => `
+-          <div class="ledger-row">
+-            <span>${row.day}</span>
+-            <strong>${formatTokenMillions(row.totalTokens)}</strong>
+-            <strong>${formatUsd(row.totalUsd)}</strong>
+-          </div>
+-        `
+-      )
+-      .join("");
++    const hideTooltip = () => {
++      tooltip.classList.remove("visible");
++    };
+ 
+-    document.getElementById("daily-total-cost").textContent = formatUsd(
+-      snapshot.overview.totalEstimatedCost
+-    );
+-    document.getElementById("latest-daily-cost").textContent = formatUsd(rows[0].totalUsd);
+-    document.getElementById("token-chart-peak").textContent = `峰值 ${formatTokenMillions(
+-      Math.max(...rows.map((row) => row.totalTokens), 0)
+-    )}`;
+-    document.getElementById("cost-chart-peak").textContent = `峰值 ${formatUsd(
+-      Math.max(...rows.map((row) => row.totalUsd), 0)
+-    )}`;
++    for (const target of targets) {
++      target.addEventListener("mouseenter", showTooltip);
++      target.addEventListener("focus", showTooltip);
++      target.addEventListener("mouseleave", hideTooltip);
++      target.addEventListener("blur", hideTooltip);
++    }
+   }
+ 
+   function renderRecentThreads(snapshot) {
+@@ -167,7 +317,7 @@
+               <span class="thread-title">${escapeHtml(thread.title || "(untitled)")}</span>
+               <span class="thread-meta">${escapeHtml(thread.cwd || "-")}</span>
+             </td>
+-            <td>${escapeHtml(thread.modelName || "未知模型")}</td>
++            <td>${escapeHtml(formatModelLabel(thread.modelName))}</td>
+             <td>${formatTokenMillions(thread.tokensUsed)}</td>
+             <td>${thread.cost ? formatUsd(thread.cost.totalUsd) : "-"}</td>
+             <td>${formatResetTime(thread.updatedAt)}</td>
+@@ -191,19 +341,19 @@
+       <div class="cost-row">
+         <span>输入 token</span>
+         <strong>${formatTokenMillions(currentSession.inputTokens)}</strong>
+-        <span class="cost-meta">$${cost.inputPerMillion}/M</span>
++        <span class="cost-meta">${formatPricePerMillion(cost.inputPerMillion)}</span>
+         <strong>${formatUsd(cost.inputUsd)}</strong>
+       </div>
+       <div class="cost-row">
+         <span>缓存输入</span>
+         <strong>${formatTokenMillions(currentSession.cachedInputTokens)}</strong>
+-        <span class="cost-meta">$${cost.cachedInputPerMillion ?? "-"}/M</span>
++        <span class="cost-meta">${formatPricePerMillion(cost.cachedInputPerMillion)}</span>
+         <strong>${formatUsd(cost.cachedInputUsd)}</strong>
+       </div>
+       <div class="cost-row">
+         <span>输出 token</span>
+         <strong>${formatTokenMillions(currentSession.outputTokens)}</strong>
+-        <span class="cost-meta">$${cost.outputPerMillion}/M</span>
++        <span class="cost-meta">${formatPricePerMillion(cost.outputPerMillion)}</span>
+         <strong>${formatUsd(cost.outputUsd)}</strong>
+       </div>
+       <div class="cost-row total-row">
+@@ -239,9 +389,9 @@
+                 <strong>${escapeHtml(row.modelName)}</strong>
+                 <span class="pricing-source-note">${escapeHtml(row.sourceLabel || "-")}</span>
+               </div>
+-              <strong>${row.inputPerMillion == null ? "-" : `$${row.inputPerMillion}/M`}</strong>
+-              <strong>${row.cachedInputPerMillion == null ? "-" : `$${row.cachedInputPerMillion}/M`}</strong>
+-              <strong>${row.outputPerMillion == null ? "-" : `$${row.outputPerMillion}/M`}</strong>
++              <strong>${formatPricePerMillion(row.inputPerMillion)}</strong>
++              <strong>${formatPricePerMillion(row.cachedInputPerMillion)}</strong>
++              <strong>${formatPricePerMillion(row.outputPerMillion)}</strong>
+             </div>
+           `
+         )
+@@ -249,11 +399,225 @@
+     `;
+   }
+ 
++  function applyResetProgress(prefix, generatedAt, windowData) {
++    const progressLabel = document.getElementById(`${prefix}-reset-progress`);
++    const progressBar = document.getElementById(`${prefix}-reset-progress-bar`);
++    const progress = calculateResetProgress({
++      generatedAt,
++      resetsAt: windowData?.resetsAt,
++      windowMinutes: windowData?.windowMinutes,
++    });
++
++    if (!windowData || progress.elapsedPercent === null) {
++      progressLabel.textContent = "-";
++      progressBar.style.width = "0%";
++      progressBar.removeAttribute("title");
++      return;
++    }
++
++    progressLabel.textContent = `${progress.elapsedPercent}%`;
++    progressBar.style.width = `${progress.elapsedPercent}%`;
++    progressBar.title = `${windowData.label} 已运行 ${progress.elapsedPercent}%，剩余 ${progress.remainingPercent}%`;
++  }
++
++  function updateSourceInput(snapshot) {
++    const input = document.getElementById("codex-home-input");
++    if (!input) {
++      return;
++    }
++
++    if (document.activeElement === input && input.dataset.dirty === "true") {
++      return;
++    }
++
++    input.value = snapshot.sources.codexHome || "";
++    input.dataset.dirty = "false";
++  }
++
++  function syncBillingRange(scopeRows) {
++    const scopeSize = scopeRows.length;
++    if (!scopeSize) {
++      dashboardState.rangeStart = 0;
++      dashboardState.rangeEnd = 0;
++      return;
++    }
++
++    const bounds = normalizeRangeBounds(scopeSize, dashboardState.rangeStart, dashboardState.rangeEnd);
++    dashboardState.rangeStart = bounds.startIndex;
++    dashboardState.rangeEnd = bounds.endIndex;
++  }
++
++  function setRangePreset(preset, scopeRows, generatedAt) {
++    const chronologicalRows = [...scopeRows].reverse();
++    const total = chronologicalRows.length;
++
++    if (!total) {
++      dashboardState.rangeStart = 0;
++      dashboardState.rangeEnd = 0;
++      return;
++    }
++
++    if (preset === "all") {
++      dashboardState.rangeStart = 0;
++      dashboardState.rangeEnd = total - 1;
++      return;
++    }
++
++    if (preset === "month") {
++      if (dashboardState.billingScope === "month") {
++        dashboardState.rangeStart = 0;
++        dashboardState.rangeEnd = total - 1;
++        return;
++      }
++
++      const generatedDate = new Date(generatedAt || Date.now());
++      const monthKey = `${generatedDate.getFullYear()}-${String(
++        generatedDate.getMonth() + 1
++      ).padStart(2, "0")}`;
++      const matchingIndexes = chronologicalRows
++        .map((row, index) => (String(row.day || "").startsWith(monthKey) ? index : null))
++        .filter((index) => index !== null);
++
++      if (matchingIndexes.length) {
++        dashboardState.rangeStart = matchingIndexes[0];
++        dashboardState.rangeEnd = matchingIndexes[matchingIndexes.length - 1];
++        return;
++      }
++
++      dashboardState.rangeStart = 0;
++      dashboardState.rangeEnd = total - 1;
++      return;
++    }
++
++    const days = Number(preset);
++    if (!Number.isFinite(days) || days <= 0) {
++      dashboardState.rangeStart = 0;
++      dashboardState.rangeEnd = total - 1;
++      return;
++    }
++
++    dashboardState.rangeEnd = total - 1;
++    dashboardState.rangeStart = Math.max(0, total - days);
++  }
++
++  function updateRangeInputs(scopeRows) {
++    const startInput = document.getElementById("billing-range-start");
++    const endInput = document.getElementById("billing-range-end");
++    const selectionBar = document.getElementById("billing-range-selection");
++    const rangeLabel = document.getElementById("billing-range-label");
++    const chronologicalRows = [...scopeRows].reverse();
++    const total = chronologicalRows.length;
++
++    if (!startInput || !endInput || !selectionBar || !rangeLabel) {
++      return;
++    }
++
++    if (!total) {
++      startInput.disabled = true;
++      endInput.disabled = true;
++      rangeLabel.textContent = "没有可选时间范围";
++      selectionBar.style.left = "0%";
++      selectionBar.style.width = "0%";
++      return;
++    }
++
++    syncBillingRange(scopeRows);
++    const bounds = normalizeRangeBounds(total, dashboardState.rangeStart, dashboardState.rangeEnd);
++    const denominator = Math.max(1, total - 1);
++    const left = (bounds.startIndex / denominator) * 100;
++    const right = (bounds.endIndex / denominator) * 100;
++
++    startInput.disabled = false;
++    endInput.disabled = false;
++    startInput.max = String(total - 1);
++    endInput.max = String(total - 1);
++    startInput.value = String(bounds.startIndex);
++    endInput.value = String(bounds.endIndex);
++    selectionBar.style.left = `${left}%`;
++    selectionBar.style.width = `${Math.max(8, right - left)}%`;
++    rangeLabel.textContent = `${chronologicalRows[bounds.startIndex].day} -> ${
++      chronologicalRows[bounds.endIndex].day
++    }`;
++  }
++
++  function renderDailyUsage(snapshot) {
++    const chartContainer = document.getElementById("combined-chart");
++    const ledgerBody = document.getElementById("daily-ledger-body");
++    const scopeRows = getScopeRows(snapshot.dailyLedger || [], snapshot.generatedAt, dashboardState.billingScope);
++
++    if (!scopeRows.length) {
++      chartContainer.innerHTML = "没有每日账单数据";
++      chartContainer.className = "line-chart-shell empty-state";
++      ledgerBody.innerHTML = '<tr><td colspan="3" class="empty-row">没有账单明细</td></tr>';
++      document.getElementById("scope-total-cost").textContent = "-";
++      document.getElementById("scope-total-tokens").textContent = "-";
++      document.getElementById("range-total-cost").textContent = "-";
++      document.getElementById("range-total-tokens").textContent = "-";
++      document.getElementById("combined-chart-peak").textContent = "-";
++      document.getElementById("billing-empty-note").textContent = "当前范围暂无数据";
++      updateRangeInputs(scopeRows);
++      return;
++    }
++
++    if (dashboardState.rangeEnd === 0 && dashboardState.rangeStart === 0) {
++      setRangePreset("all", scopeRows);
++    }
++    syncBillingRange(scopeRows);
++
++    const visibleRows = getVisibleLedgerRows(
++      scopeRows,
++      dashboardState.rangeStart,
++      dashboardState.rangeEnd
++    );
++    const scopeSummary = summarizeLedgerRows(scopeRows);
++    const visibleSummary = summarizeLedgerRows(visibleRows);
++    const scopeLabel = dashboardState.billingScope === "month" ? "自然月" : "累计";
++
++    chartContainer.className = "line-chart-shell";
++    chartContainer.innerHTML = buildCombinedChartMarkup(visibleRows);
++    bindCombinedChartInteractions(chartContainer);
++
++    document.getElementById("billing-scope-name").textContent = scopeLabel;
++    document.getElementById("scope-total-cost-label").textContent = `${scopeLabel}费用`;
++    document.getElementById("scope-total-tokens-label").textContent = `${scopeLabel} Token`;
++    document.getElementById("scope-total-cost").textContent = formatUsd(scopeSummary.totalUsd);
++    document.getElementById("scope-total-tokens").textContent = formatTokenMillions(scopeSummary.totalTokens);
++    document.getElementById("range-total-cost").textContent = formatUsd(visibleSummary.totalUsd);
++    document.getElementById("range-total-tokens").textContent = formatTokenMillions(
++      visibleSummary.totalTokens
++    );
++    document.getElementById("combined-chart-peak").textContent = [
++      `Token 峰值 ${formatTokenMillions(Math.max(...visibleRows.map((row) => row.totalTokens), 0))}`,
++      `费用峰值 ${formatUsd(Math.max(...visibleRows.map((row) => row.totalUsd), 0))}`,
++    ].join(" · ");
++    document.getElementById("billing-empty-note").textContent = `共 ${visibleRows.length} 天明细`;
++
++    ledgerBody.innerHTML = visibleRows.length
++      ? visibleRows
++          .map(
++            (row) => `
++              <tr>
++                <td>${row.day}</td>
++                <td>${formatTokenMillions(row.totalTokens)}</td>
++                <td>${formatUsd(row.totalUsd)}</td>
++              </tr>
++            `
++          )
++          .join("")
++      : '<tr><td colspan="3" class="empty-row">没有账单明细</td></tr>';
++
++    updateRangeInputs(scopeRows);
++  }
++
+   function renderSnapshot(snapshot) {
++    dashboardState.snapshot = snapshot;
++
+     document.getElementById("generated-at").textContent = `最近更新 ${new Date(
+       snapshot.generatedAt
+     ).toLocaleString("zh-CN")}`;
+-    document.getElementById("source-home").textContent = snapshot.sources.codexHome;
++    document.getElementById("source-home").textContent = `当前目录 ${snapshot.sources.codexHome || "-"}`;
++    updateSourceInput(snapshot);
++
+     document.getElementById("total-tokens").textContent = formatTokenMillions(snapshot.overview.totalTokens);
+     document.getElementById("total-tokens-raw").textContent = `${formatTokenRaw(
+       snapshot.overview.totalTokens
+@@ -267,7 +631,9 @@
+     document.getElementById("current-session-last").textContent = currentSession
+       ? `最近一次 ${formatTokenMillions(currentSession.lastTokens)}`
+       : "最近一次不可用";
+-    document.getElementById("current-model-name").textContent = currentSession?.modelName || "未知模型";
++    document.getElementById("current-model-name").textContent = formatModelLabel(
++      currentSession?.modelName
++    );
+     document.getElementById("current-model-cost").textContent = currentSession?.cost
+       ? `当前会话费用 ${formatUsd(currentSession.cost.totalUsd)}`
+       : "当前会话费用不可用";
+@@ -278,8 +644,10 @@
+     const rateLimits = snapshot.live.rateLimits;
+     const primary = rateLimits?.primary || null;
+     const secondary = rateLimits?.secondary || null;
++    const planName = formatPlanName(rateLimits?.planType);
+ 
+-    document.getElementById("plan-type").textContent = rateLimits?.planType || "未知计划";
++    document.getElementById("hero-plan").textContent = planName;
++    document.getElementById("plan-type").textContent = planName;
+     document.getElementById("primary-label").textContent = primary?.label || "主限制窗口";
+     document.getElementById("secondary-label").textContent = secondary?.label || "次限制窗口";
+     document.getElementById("primary-percent").textContent = formatPercent(primary?.usedPercent);
+@@ -306,6 +674,9 @@
+       ? `限制快照时间 ${new Date(snapshot.live.latestRateLimitAt).toLocaleString("zh-CN")}`
+       : "暂无限制快照";
+ 
++    applyResetProgress("primary", snapshot.generatedAt, primary);
++    applyResetProgress("secondary", snapshot.generatedAt, secondary);
++
+     renderDailyUsage(snapshot);
+     renderRecentThreads(snapshot);
+     renderCostBreakdown(currentSession);
+@@ -332,7 +703,165 @@
+     return response.json();
+   }
+ 
++  async function updateSource(codexHome) {
++    const response = await fetch("/api/source", {
++      method: "POST",
++      headers: {
++        "content-type": "application/json",
++      },
++      body: JSON.stringify({
++        codexHome,
++      }),
++    });
++    const payload = await response.json();
++
++    if (!response.ok) {
++      throw new Error(payload.error || `Source update failed with ${response.status}`);
++    }
++
++    return payload;
++  }
++
++  function setSourceFeedback(message, state) {
++    const feedback = document.getElementById("source-feedback");
++    if (!feedback) {
++      return;
++    }
++
++    feedback.textContent = message;
++    feedback.className = `source-feedback${state ? ` ${state}` : ""}`;
++  }
++
++  function initializeTabs() {
++    const triggers = document.querySelectorAll("[data-tab-trigger]");
++    const panels = document.querySelectorAll("[data-tab-panel]");
++
++    const selectTab = (nextTab) => {
++      for (const trigger of triggers) {
++        const active = trigger.dataset.tabTrigger === nextTab;
++        trigger.classList.toggle("active", active);
++        trigger.setAttribute("aria-selected", String(active));
++      }
++
++      for (const panel of panels) {
++        const active = panel.dataset.tabPanel === nextTab;
++        panel.classList.toggle("active", active);
++        panel.hidden = !active;
++      }
++    };
++
++    for (const trigger of triggers) {
++      trigger.addEventListener("click", () => {
++        selectTab(trigger.dataset.tabTrigger);
++      });
++    }
++  }
++
++  function initializeBillingControls() {
++    const scopeButtons = document.querySelectorAll("[data-billing-scope]");
++    const presetButtons = document.querySelectorAll("[data-range-preset]");
++    const startInput = document.getElementById("billing-range-start");
++    const endInput = document.getElementById("billing-range-end");
++
++    for (const button of scopeButtons) {
++      button.addEventListener("click", () => {
++        dashboardState.billingScope = button.dataset.billingScope;
++        for (const sibling of scopeButtons) {
++          sibling.classList.toggle("active", sibling === button);
++        }
++
++        if (dashboardState.snapshot) {
++          const scopeRows = getScopeRows(
++            dashboardState.snapshot.dailyLedger || [],
++            dashboardState.snapshot.generatedAt,
++            dashboardState.billingScope
++          );
++          setRangePreset(
++            button.dataset.billingScope === "month" ? "month" : "all",
++            scopeRows,
++            dashboardState.snapshot.generatedAt
++          );
++          renderDailyUsage(dashboardState.snapshot);
++        }
++      });
++    }
++
++    for (const button of presetButtons) {
++      button.addEventListener("click", () => {
++        if (!dashboardState.snapshot) {
++          return;
++        }
++
++        const scopeRows = getScopeRows(
++          dashboardState.snapshot.dailyLedger || [],
++          dashboardState.snapshot.generatedAt,
++          dashboardState.billingScope
++        );
++        setRangePreset(button.dataset.rangePreset, scopeRows, dashboardState.snapshot.generatedAt);
++        renderDailyUsage(dashboardState.snapshot);
++      });
++    }
++
++    const updateRange = () => {
++      dashboardState.rangeStart = Number(startInput.value || 0);
++      dashboardState.rangeEnd = Number(endInput.value || 0);
++      if (dashboardState.snapshot) {
++        renderDailyUsage(dashboardState.snapshot);
++      }
++    };
++
++    startInput.addEventListener("input", updateRange);
++    endInput.addEventListener("input", updateRange);
++  }
++
++  function initializeSourceForm() {
++    const form = document.getElementById("source-form");
++    const input = document.getElementById("codex-home-input");
++    const resetButton = document.getElementById("reset-source-button");
++
++    if (!form || !input || !resetButton) {
++      return;
++    }
++
++    input.addEventListener("input", () => {
++      input.dataset.dirty = "true";
++    });
++
++    form.addEventListener("submit", async (event) => {
++      event.preventDefault();
++      setSourceFeedback("正在切换数据目录...", "");
++
++      try {
++        const snapshot = await updateSource(input.value.trim());
++        input.dataset.dirty = "false";
++        renderSnapshot(snapshot);
++        setConnectionState(true, "实时中");
++        setSourceFeedback("数据目录已更新。", "success");
++      } catch (error) {
++        setSourceFeedback(error.message, "error");
++      }
++    });
++
++    resetButton.addEventListener("click", async () => {
++      setSourceFeedback("正在恢复默认目录...", "");
++
++      try {
++        const snapshot = await updateSource("");
++        input.dataset.dirty = "false";
++        renderSnapshot(snapshot);
++        setConnectionState(true, "实时中");
++        setSourceFeedback("已恢复默认目录。", "success");
++      } catch (error) {
++        setSourceFeedback(error.message, "error");
++      }
++    });
++  }
++
+   async function startDashboard() {
++    initializeTabs();
++    initializeSourceForm();
++    initializeBillingControls();
++
+     try {
+       renderSnapshot(await fetchSnapshot());
+       setConnectionState(true, "实时中");
+@@ -366,10 +895,16 @@
+ 
+   if (typeof module !== "undefined" && module.exports) {
+     module.exports = {
+-      formatTokenMillions,
++      buildCombinedChartMarkup,
++      calculateResetProgress,
++      formatModelLabel,
+       formatPercent,
+       formatResetTime,
++      formatTokenMillions,
+       formatUsd,
++      getScopeRows,
++      getVisibleLedgerRows,
++      summarizeLedgerRows,
+     };
+   }
+ 
+diff --git a/public/index.html b/public/index.html
+index 2ed434e..368058f 100644
+--- a/public/index.html
++++ b/public/index.html
+@@ -14,17 +14,38 @@
+           <p class="eyebrow">Codex 本地消耗与限制监控</p>
+           <h1>本地用量驾驶舱</h1>
+           <p class="hero-text">
+-            只读取你本机 <code>~/.codex</code> 的 SQLite 与 session 日志，展示
+-            token 消耗、限制窗口、模型名称、单价与费用估算。
++            默认读取 <code>~/.codex</code>，也支持切换到你指定的本地目录，展示 token
++            消耗、限制窗口、模型价格与费用估算。
+           </p>
+         </div>
+         <div class="hero-status">
+-          <div class="status-chip">
+-            <span class="status-dot" id="live-dot"></span>
+-            <span id="live-status">连接中</span>
++          <div class="hero-status-top">
++            <div class="status-chip">
++              <span class="status-dot" id="live-dot"></span>
++              <span id="live-status">连接中</span>
++            </div>
++            <div class="plan-badge">
++              <span>订阅计划</span>
++              <strong id="hero-plan">未知</strong>
++            </div>
+           </div>
+           <p id="generated-at" class="meta-line">等待第一份快照</p>
+           <p id="source-home" class="meta-line"></p>
++          <form id="source-form" class="source-form">
++            <label for="codex-home-input">本地数据目录</label>
++            <div class="source-form-row">
++              <input
++                id="codex-home-input"
++                name="codexHome"
++                type="text"
++                placeholder="粘贴 .codex 目录或其上级目录"
++                autocomplete="off"
++              />
++              <button type="submit">应用路径</button>
++              <button type="button" id="reset-source-button" class="secondary-button">恢复默认</button>
++            </div>
++            <p id="source-feedback" class="source-feedback">你可以直接输入文件夹地址，然后切换数据源。</p>
++          </form>
+         </div>
+       </header>
+ 
+@@ -77,6 +98,13 @@
+               <div class="quota-bar"><div id="primary-bar"></div></div>
+               <p class="quota-meta" id="primary-remaining">剩余 -</p>
+               <p class="quota-meta" id="primary-reset">等待快照</p>
++              <div class="reset-progress">
++                <div class="reset-progress-track"><div id="primary-reset-progress-bar"></div></div>
++                <div class="reset-progress-meta">
++                  <span>距重置进度</span>
++                  <strong id="primary-reset-progress">-</strong>
++                </div>
++              </div>
+             </article>
+             <article class="quota-card">
+               <div class="quota-topline">
+@@ -86,6 +114,13 @@
+               <div class="quota-bar"><div id="secondary-bar"></div></div>
+               <p class="quota-meta" id="secondary-remaining">剩余 -</p>
+               <p class="quota-meta" id="secondary-reset">等待快照</p>
++              <div class="reset-progress">
++                <div class="reset-progress-track"><div id="secondary-reset-progress-bar"></div></div>
++                <div class="reset-progress-meta">
++                  <span>距重置进度</span>
++                  <strong id="secondary-reset-progress">-</strong>
++                </div>
++              </div>
+             </article>
+             <article class="quota-card quota-meta-card">
+               <div class="quota-topline">
+@@ -112,71 +147,147 @@
+             <article class="panel inset-panel">
+               <div class="section-heading compact-heading">
+                 <span>模型价格表</span>
+-                <small>从本地日志提取模型，再匹配单价</small>
+-              </div>
+-              <div id="pricing-table" class="pricing-table empty-state">
+-                等待数据
++                <small>同价模型自动合并展示</small>
+               </div>
++              <div id="pricing-table" class="pricing-table empty-state">等待数据</div>
+             </article>
+           </div>
+         </section>
+ 
+-        <section class="panel span-5">
++        <section class="panel span-12">
+           <div class="section-heading">
+-            <span>每日账单走势</span>
+-            <small>折线图 + 每日明细账单</small>
++            <span>最近会话与账单</span>
++            <small>切换查看最近会话表格或账单走势</small>
+           </div>
+-          <div class="daily-chart-summary">
+-            <div class="summary-pill">
+-              <span>累计估算费用</span>
+-              <strong id="daily-total-cost">-</strong>
+-            </div>
+-            <div class="summary-pill">
+-              <span>最近一天</span>
+-              <strong id="latest-daily-cost">-</strong>
++          <div class="tab-strip" role="tablist" aria-label="最近会话与账单">
++            <button
++              type="button"
++              class="tab-trigger active"
++              data-tab-trigger="sessions"
++              role="tab"
++              aria-selected="true"
++            >
++              最近会话
++            </button>
++            <button
++              type="button"
++              class="tab-trigger"
++              data-tab-trigger="billing"
++              role="tab"
++              aria-selected="false"
++            >
++              账单走势
++            </button>
++          </div>
++
++          <div class="tab-panel active" data-tab-panel="sessions">
++            <div class="table-scroll">
++              <table>
++                <thead>
++                  <tr>
++                    <th>标题</th>
++                    <th>模型</th>
++                    <th>消耗</th>
++                    <th>费用</th>
++                    <th>更新时间</th>
++                  </tr>
++                </thead>
++                <tbody id="recent-threads">
++                  <tr>
++                    <td colspan="5" class="empty-row">等待数据</td>
++                  </tr>
++                </tbody>
++              </table>
+             </div>
+           </div>
+-          <div class="chart-grid">
+-            <article class="line-chart-card">
+-              <div class="chart-card-head">
+-                <span>每日 Token 折线图</span>
+-                <strong id="token-chart-peak">-</strong>
++
++          <div class="tab-panel" data-tab-panel="billing" hidden>
++            <div class="billing-toolbar">
++              <div class="tab-strip compact-strip" role="tablist" aria-label="账单统计范围">
++                <button
++                  type="button"
++                  class="tab-trigger active"
++                  data-billing-scope="cumulative"
++                >
++                  累计
++                </button>
++                <button
++                  type="button"
++                  class="tab-trigger"
++                  data-billing-scope="month"
++                >
++                  自然月
++                </button>
+               </div>
+-              <div id="token-chart" class="line-chart-shell">等待数据</div>
+-            </article>
+-            <article class="line-chart-card">
++              <div class="preset-strip">
++                <button type="button" class="preset-chip" data-range-preset="7">7天</button>
++                <button type="button" class="preset-chip" data-range-preset="30">30天</button>
++                <button type="button" class="preset-chip" data-range-preset="month">本月</button>
++                <button type="button" class="preset-chip" data-range-preset="all">全部</button>
++              </div>
++            </div>
++            <div class="daily-chart-summary billing-summary-grid">
++              <div class="summary-pill">
++                <span id="scope-total-cost-label">累计费用</span>
++                <strong id="scope-total-cost">-</strong>
++              </div>
++              <div class="summary-pill">
++                <span id="scope-total-tokens-label">累计 Token</span>
++                <strong id="scope-total-tokens">-</strong>
++              </div>
++              <div class="summary-pill">
++                <span>当前范围费用</span>
++                <strong id="range-total-cost">-</strong>
++              </div>
++              <div class="summary-pill">
++                <span>当前范围 Token</span>
++                <strong id="range-total-tokens">-</strong>
++              </div>
++            </div>
++            <article class="line-chart-card combined-chart-card">
+               <div class="chart-card-head">
+-                <span>每日费用折线图</span>
+-                <strong id="cost-chart-peak">-</strong>
++                <span>每日 Token / 费用</span>
++                <small id="billing-scope-name">累计</small>
++                <strong id="combined-chart-peak">-</strong>
++              </div>
++              <div id="combined-chart" class="line-chart-shell">等待数据</div>
++              <div class="range-panel">
++                <div class="range-panel-head">
++                  <span>时间范围</span>
++                  <strong id="billing-range-label">-</strong>
++                </div>
++                <div class="range-track">
++                  <div class="range-track-base"></div>
++                  <div id="billing-range-selection" class="range-track-selection"></div>
++                </div>
++                <div class="range-inputs">
++                  <input id="billing-range-start" type="range" min="0" max="0" value="0" />
++                  <input id="billing-range-end" type="range" min="0" max="0" value="0" />
++                </div>
+               </div>
+-              <div id="cost-chart" class="line-chart-shell">等待数据</div>
+             </article>
+-          </div>
+-          <div id="daily-ledger" class="daily-ledger empty-state">等待数据</div>
+-        </section>
+-
+-        <section class="panel span-7">
+-          <div class="section-heading">
+-            <span>最近会话</span>
+-            <small>模型、消耗、费用估算与更新时间</small>
+-          </div>
+-          <div class="table-scroll">
+-            <table>
+-              <thead>
+-                <tr>
+-                  <th>标题</th>
+-                  <th>模型</th>
+-                  <th>消耗</th>
+-                  <th>费用</th>
+-                  <th>更新时间</th>
+-                </tr>
+-              </thead>
+-              <tbody id="recent-threads">
+-                <tr>
+-                  <td colspan="5" class="empty-row">等待数据</td>
+-                </tr>
+-              </tbody>
+-            </table>
++            <div class="ledger-panel">
++              <div class="section-heading compact-heading ledger-heading">
++                <span>账单明细</span>
++                <small id="billing-empty-note">等待数据</small>
++              </div>
++              <div class="table-scroll">
++                <table class="billing-table">
++                  <thead>
++                    <tr>
++                      <th>日期</th>
++                      <th>Token</th>
++                      <th>费用</th>
++                    </tr>
++                  </thead>
++                  <tbody id="daily-ledger-body">
++                    <tr>
++                      <td colspan="3" class="empty-row">等待数据</td>
++                    </tr>
++                  </tbody>
++                </table>
++              </div>
++            </div>
+           </div>
+         </section>
+       </main>
+diff --git a/public/styles.css b/public/styles.css
+index 8c40a9d..ac526cb 100644
+--- a/public/styles.css
++++ b/public/styles.css
+@@ -30,7 +30,10 @@ code,
+ .quota-topline strong,
+ .cost-row strong,
+ td:nth-child(3),
+-td:nth-child(4) {
++td:nth-child(4),
++.summary-pill strong,
++.reset-progress-meta strong,
++.plan-badge strong {
+   font-family: "SF Mono", "Menlo", "Monaco", monospace;
+ }
+ 
+@@ -42,7 +45,7 @@ td:nth-child(4) {
+ 
+ .hero {
+   display: grid;
+-  grid-template-columns: 1.35fr 0.75fr;
++  grid-template-columns: 1.2fr 0.8fr;
+   gap: 20px;
+   align-items: stretch;
+   margin-bottom: 22px;
+@@ -78,6 +81,14 @@ td:nth-child(4) {
+   background: radial-gradient(circle, rgba(191, 59, 32, 0.22), transparent 70%);
+ }
+ 
++.hero-status-top {
++  display: flex;
++  justify-content: space-between;
++  gap: 12px;
++  align-items: center;
++  flex-wrap: wrap;
++}
++
+ .eyebrow {
+   margin: 0 0 10px;
+   text-transform: uppercase;
+@@ -101,19 +112,33 @@ h1 {
+   line-height: 1.7;
+ }
+ 
+-.status-chip {
++.status-chip,
++.plan-badge {
+   display: inline-flex;
+   align-items: center;
+   gap: 10px;
+   padding: 10px 14px;
+   border-radius: 999px;
+   border: 1px solid var(--line);
+-  background: rgba(255, 255, 255, 0.7);
++  background: rgba(255, 255, 255, 0.72);
+   font-size: 13px;
++  letter-spacing: 0.08em;
++}
++
++.status-chip {
+   text-transform: uppercase;
+   letter-spacing: 0.12em;
+ }
+ 
++.plan-badge {
++  color: var(--muted);
++}
++
++.plan-badge strong {
++  color: var(--accent-deep);
++  font-size: 16px;
++}
++
+ .status-dot {
+   width: 11px;
+   height: 11px;
+@@ -131,6 +156,73 @@ h1 {
+   margin: 16px 0 0;
+   color: var(--muted);
+   line-height: 1.5;
++  word-break: break-all;
++}
++
++.source-form {
++  position: relative;
++  z-index: 1;
++  margin-top: 18px;
++  display: grid;
++  gap: 10px;
++}
++
++.source-form label {
++  font-size: 13px;
++  color: var(--muted);
++  letter-spacing: 0.08em;
++  text-transform: uppercase;
++}
++
++.source-form-row {
++  display: grid;
++  grid-template-columns: minmax(0, 1fr) auto auto;
++  gap: 10px;
++}
++
++.source-form input,
++.source-form button {
++  min-height: 44px;
++  border-radius: 14px;
++  border: 1px solid var(--line);
++  font: inherit;
++}
++
++.source-form input {
++  padding: 0 14px;
++  background: rgba(255, 255, 255, 0.8);
++  color: var(--ink);
++}
++
++.source-form button {
++  padding: 0 16px;
++  background: var(--accent);
++  color: #fff6f1;
++  cursor: pointer;
++  transition: transform 0.2s ease, background 0.2s ease;
++}
++
++.source-form button:hover {
++  transform: translateY(-1px);
++}
++
++.source-form button.secondary-button {
++  background: rgba(255, 255, 255, 0.7);
++  color: var(--ink);
++}
++
++.source-feedback {
++  margin: 0;
++  color: var(--muted);
++  font-size: 13px;
++}
++
++.source-feedback.error {
++  color: var(--accent);
++}
++
++.source-feedback.success {
++  color: var(--accent-deep);
+ }
+ 
+ .dashboard-grid {
+@@ -149,14 +241,6 @@ h1 {
+   grid-column: span 12;
+ }
+ 
+-.span-7 {
+-  grid-column: span 7;
+-}
+-
+-.span-5 {
+-  grid-column: span 5;
+-}
+-
+ .section-heading {
+   display: flex;
+   justify-content: space-between;
+@@ -183,10 +267,6 @@ h1 {
+   gap: 14px;
+ }
+ 
+-.metric-grid-four {
+-  grid-template-columns: repeat(4, minmax(0, 1fr));
+-}
+-
+ .metric-grid-five {
+   grid-template-columns: repeat(5, minmax(0, 1fr));
+ }
+@@ -266,22 +346,48 @@ h1 {
+   align-items: center;
+ }
+ 
+-.quota-bar {
++.quota-bar,
++.reset-progress-track {
+   height: 12px;
+-  margin: 12px 0 10px;
+   background: rgba(101, 91, 77, 0.12);
+   border-radius: 999px;
+   overflow: hidden;
+ }
+ 
+-.quota-bar > div {
++.quota-bar {
++  margin: 12px 0 10px;
++}
++
++.quota-bar > div,
++.reset-progress-track > div {
+   width: 0;
+   height: 100%;
+   border-radius: inherit;
+-  background: linear-gradient(90deg, var(--accent-soft), var(--accent));
+   transition: width 0.45s ease;
+ }
+ 
++.quota-bar > div {
++  background: linear-gradient(90deg, var(--accent-soft), var(--accent));
++}
++
++.reset-progress {
++  margin-top: 14px;
++  display: grid;
++  gap: 8px;
++}
++
++.reset-progress-track > div {
++  background: linear-gradient(90deg, rgba(27, 83, 102, 0.25), var(--accent-deep));
++}
++
++.reset-progress-meta {
++  display: flex;
++  justify-content: space-between;
++  gap: 12px;
++  color: var(--muted);
++  font-size: 13px;
++}
++
+ .quota-meta {
+   color: var(--muted);
+   margin: 8px 0 0;
+@@ -300,7 +406,9 @@ h1 {
+   box-shadow: none;
+ }
+ 
+-.cost-breakdown {
++.cost-breakdown,
++.pricing-table,
++.daily-ledger {
+   display: grid;
+   gap: 10px;
+ }
+@@ -316,30 +424,19 @@ h1 {
+   border: 1px solid var(--line);
+ }
+ 
+-.cost-row.single-row {
+-  grid-template-columns: 1fr;
+-}
+-
+ .cost-row.total-row {
+   grid-template-columns: 1fr auto;
+ }
+ 
++.cost-row.single-row {
++  grid-template-columns: 1fr;
++}
++
+ .cost-meta {
+   color: var(--muted);
+   font-size: 13px;
+ }
+ 
+-.pricing-source {
+-  display: grid;
+-  gap: 8px;
+-  align-content: start;
+-}
+-
+-.pricing-table {
+-  display: grid;
+-  gap: 10px;
+-}
+-
+ .pricing-head,
+ .pricing-row {
+   display: grid;
+@@ -369,34 +466,73 @@ h1 {
+   font-size: 12px;
+ }
+ 
+-.compact-meta {
+-  margin-top: 0;
++.tab-strip {
++  display: inline-grid;
++  grid-template-columns: repeat(2, minmax(0, auto));
++  gap: 10px;
++  padding: 6px;
++  border-radius: 999px;
++  background: rgba(255, 255, 255, 0.62);
++  border: 1px solid var(--line);
+ }
+ 
+-.usage-bars {
+-  display: grid;
+-  gap: 12px;
++.tab-trigger {
++  min-height: 42px;
++  padding: 0 18px;
++  border: 0;
++  border-radius: 999px;
++  background: transparent;
++  color: var(--muted);
++  font: inherit;
++  cursor: pointer;
++  transition: background 0.2s ease, color 0.2s ease, transform 0.2s ease;
+ }
+ 
+-.usage-row {
+-  display: grid;
+-  grid-template-columns: 88px minmax(0, 1fr) auto;
+-  gap: 12px;
++.tab-trigger.active {
++  background: linear-gradient(135deg, rgba(27, 83, 102, 0.96), rgba(191, 59, 32, 0.88));
++  color: #fffaf6;
++}
++
++.tab-trigger:hover {
++  transform: translateY(-1px);
++}
++
++.tab-panel {
++  margin-top: 18px;
++}
++
++.billing-toolbar {
++  display: flex;
++  justify-content: space-between;
++  gap: 14px;
+   align-items: center;
++  margin-bottom: 14px;
++  flex-wrap: wrap;
++}
++
++.compact-strip {
++  padding: 5px;
+ }
+ 
+-.usage-track {
+-  height: 14px;
++.preset-strip {
++  display: flex;
++  gap: 10px;
++  flex-wrap: wrap;
++}
++
++.preset-chip {
++  min-height: 38px;
++  padding: 0 14px;
+   border-radius: 999px;
+-  background: rgba(23, 21, 18, 0.08);
+-  overflow: hidden;
++  border: 1px solid var(--line);
++  background: rgba(255, 255, 255, 0.7);
++  color: var(--muted);
++  font: inherit;
++  cursor: pointer;
+ }
+ 
+-.usage-track span {
+-  display: block;
+-  height: 100%;
+-  border-radius: inherit;
+-  background: linear-gradient(90deg, #23425a, #d86944);
++.preset-chip:hover {
++  color: var(--ink);
+ }
+ 
+ .table-scroll {
+@@ -454,6 +590,10 @@ th {
+   margin-bottom: 14px;
+ }
+ 
++.billing-summary-grid {
++  grid-template-columns: repeat(4, minmax(0, 1fr));
++}
++
+ .summary-pill {
+   padding: 12px 14px;
+   border-radius: 14px;
+@@ -472,11 +612,36 @@ th {
+ .summary-pill strong {
+   display: block;
+   margin-top: 8px;
+-  font-family: "SF Mono", "Menlo", "Monaco", monospace;
+   font-size: 24px;
+ }
+ 
++.line-chart-card {
++  padding: 14px;
++  border-radius: 16px;
++  background: rgba(255, 255, 255, 0.45);
++  border: 1px solid var(--line);
++}
++
++.combined-chart-card {
++  margin-bottom: 14px;
++}
++
++.chart-card-head {
++  display: flex;
++  justify-content: space-between;
++  gap: 12px;
++  align-items: baseline;
++  margin-bottom: 10px;
++  flex-wrap: wrap;
++}
++
++.chart-card-head small {
++  color: var(--muted);
++  font-size: 13px;
++}
++
+ .line-chart-shell {
++  position: relative;
+   padding: 14px;
+   border-radius: 16px;
+   background: rgba(255, 255, 255, 0.62);
+@@ -485,19 +650,48 @@ th {
+ 
+ .line-chart {
+   width: 100%;
+-  height: 220px;
++  height: 260px;
+   display: block;
+ }
+ 
++.chart-grid-shell {
++  display: grid;
++  grid-template-columns: 74px minmax(0, 1fr) 74px;
++  gap: 10px;
++  align-items: stretch;
++}
++
++.chart-stage {
++  position: relative;
++}
++
++.chart-y-axis {
++  display: grid;
++  align-content: space-between;
++  color: var(--muted);
++  font-size: 12px;
++}
++
++.chart-y-axis-token {
++  text-align: left;
++}
++
++.chart-y-axis-cost {
++  text-align: right;
++}
++
+ .chart-axis {
+   stroke: rgba(23, 21, 18, 0.15);
+   stroke-width: 1;
+ }
+ 
++.chart-axis-mid {
++  stroke-dasharray: 2 2;
++}
++
+ .chart-line {
+   fill: none;
+-  stroke: var(--accent-deep);
+-  stroke-width: 2.4;
++  stroke-width: 2.6;
+   stroke-linejoin: round;
+   stroke-linecap: round;
+ }
+@@ -510,41 +704,194 @@ th {
+   stroke: #bf3b20;
+ }
+ 
++.chart-point-token {
++  fill: #1f6071;
++}
++
++.chart-point-cost {
++  fill: #bf3b20;
++}
++
++.chart-hover-grid {
++  position: absolute;
++  inset: 14px 14px 44px;
++}
++
++.chart-tooltip-target {
++  position: absolute;
++  top: 0;
++  bottom: 0;
++  width: 22px;
++  transform: translateX(-50%);
++  border: 0;
++  padding: 0;
++  background: transparent;
++  cursor: crosshair;
++}
++
++.chart-tooltip {
++  position: absolute;
++  top: 12px;
++  left: 14px;
++  min-width: 180px;
++  padding: 10px 12px;
++  border-radius: 14px;
++  background: rgba(23, 21, 18, 0.9);
++  color: #fffdf8;
++  opacity: 0;
++  pointer-events: none;
++  transform: translateY(4px);
++  transition: opacity 0.18s ease, transform 0.18s ease;
++}
++
++.chart-tooltip.visible {
++  opacity: 1;
++  transform: translateY(0);
++}
++
++.chart-tooltip strong,
++.chart-tooltip span {
++  display: block;
++}
++
++.chart-tooltip span {
++  margin-top: 4px;
++  color: rgba(255, 253, 248, 0.78);
++}
++
+ .chart-legend {
+   display: flex;
+   justify-content: space-between;
+   gap: 12px;
++  margin-top: 10px;
+   color: var(--muted);
+   font-size: 13px;
++  flex-wrap: wrap;
+ }
+ 
+-.daily-ledger {
+-  margin-top: 14px;
+-  display: grid;
++.chart-legend-key {
++  display: inline-flex;
++  align-items: center;
+   gap: 8px;
+ }
+ 
+-.chart-grid {
+-  display: grid;
+-  grid-template-columns: repeat(2, minmax(0, 1fr));
+-  gap: 14px;
++.chart-legend-key::before {
++  content: "";
++  width: 10px;
++  height: 10px;
++  border-radius: 999px;
++  background: currentColor;
+ }
+ 
+-.line-chart-card {
+-  padding: 14px;
+-  border-radius: 16px;
+-  background: rgba(255, 255, 255, 0.45);
+-  border: 1px solid var(--line);
++.chart-legend-token {
++  color: #1f6071;
+ }
+ 
+-.chart-card-head {
++.chart-legend-cost {
++  color: #bf3b20;
++}
++
++.chart-brush {
+   display: flex;
+   justify-content: space-between;
+   gap: 12px;
+-  align-items: baseline;
++  margin-top: 8px;
++  color: var(--muted);
++  font-size: 12px;
++}
++
++.range-panel {
++  margin-top: 14px;
++  padding-top: 14px;
++  border-top: 1px solid var(--line);
++}
++
++.range-panel-head {
++  display: flex;
++  justify-content: space-between;
++  gap: 12px;
++  align-items: center;
++  margin-bottom: 10px;
++  color: var(--muted);
++}
++
++.range-track {
++  position: relative;
++  height: 12px;
++  margin-bottom: 10px;
++}
++
++.range-track-base,
++.range-track-selection {
++  position: absolute;
++  top: 0;
++  height: 100%;
++  border-radius: 999px;
++}
++
++.range-track-base {
++  inset: 0;
++  background: rgba(23, 21, 18, 0.08);
++}
++
++.range-track-selection {
++  left: 0;
++  width: 0;
++  background: linear-gradient(90deg, rgba(31, 96, 113, 0.88), rgba(191, 59, 32, 0.88));
++}
++
++.range-inputs {
++  position: relative;
++  height: 28px;
++}
++
++.range-inputs input[type="range"] {
++  position: absolute;
++  inset: 0;
++  width: 100%;
++  margin: 0;
++  background: transparent;
++  pointer-events: none;
++  -webkit-appearance: none;
++  appearance: none;
++}
++
++.range-inputs input[type="range"]::-webkit-slider-thumb {
++  width: 18px;
++  height: 18px;
++  border-radius: 50%;
++  background: #fff;
++  border: 2px solid var(--accent-deep);
++  box-shadow: 0 3px 10px rgba(23, 21, 18, 0.18);
++  pointer-events: auto;
++  -webkit-appearance: none;
++}
++
++.range-inputs input[type="range"]::-moz-range-thumb {
++  width: 18px;
++  height: 18px;
++  border-radius: 50%;
++  background: #fff;
++  border: 2px solid var(--accent-deep);
++  box-shadow: 0 3px 10px rgba(23, 21, 18, 0.18);
++  pointer-events: auto;
++}
++
++.ledger-panel {
++  margin-top: 14px;
++}
++
++.ledger-heading {
+   margin-bottom: 10px;
+ }
+ 
++.billing-table td:nth-child(2),
++.billing-table td:nth-child(3),
++.billing-table th:nth-child(2),
++.billing-table th:nth-child(3) {
++  text-align: right;
++}
++
+ .ledger-row {
+   display: grid;
+   grid-template-columns: 1fr auto auto;
+@@ -569,13 +916,15 @@ th {
+ }
+ 
+ @media (max-width: 1080px) {
+-  .metric-grid-four,
+   .metric-grid-five,
+   .limit-grid,
+-  .detail-grid,
+-  .chart-grid {
++  .detail-grid {
+     grid-template-columns: 1fr;
+   }
++
++  .billing-summary-grid {
++    grid-template-columns: repeat(2, minmax(0, 1fr));
++  }
+ }
+ 
+ @media (max-width: 980px) {
+@@ -584,9 +933,7 @@ th {
+     grid-template-columns: 1fr;
+   }
+ 
+-  .span-12,
+-  .span-7,
+-  .span-5 {
++  .span-12 {
+     grid-column: auto;
+   }
+ }
+@@ -596,19 +943,30 @@ th {
+     padding: 20px 14px 32px;
+   }
+ 
++  .source-form-row,
+   .cost-row,
+   .cost-row.total-row,
+-  .usage-row {
++  .pricing-head,
++  .pricing-row,
++  .daily-chart-summary,
++  .ledger-row {
+     grid-template-columns: 1fr;
+   }
+ 
+-  .daily-chart-summary,
+-  .ledger-row,
+-  .pricing-head,
+-  .pricing-row {
++  .chart-grid-shell {
+     grid-template-columns: 1fr;
+   }
+ 
++  .chart-y-axis-cost,
++  .chart-y-axis-token {
++    display: none;
++  }
++
++  .tab-strip {
++    display: grid;
++    width: 100%;
++  }
++
+   table {
+     min-width: 720px;
+   }
+diff --git a/server/lib/pricing.js b/server/lib/pricing.js
+index 294a74a..c2ad80b 100644
+--- a/server/lib/pricing.js
++++ b/server/lib/pricing.js
+@@ -172,6 +172,89 @@ function getPricingForModel(modelName) {
+   return null;
+ }
+ 
++function formatCatalogModelName(modelName, pricing) {
++  const normalizedModelName = normalizeModelName(modelName);
++
++  if (
++    normalizedModelName === "gpt-5.4" ||
++    normalizedModelName === "gpt-5.4-codex" ||
++    pricing?.pricingModelName === "gpt-5.4"
++  ) {
++    return "GPT-5.4";
++  }
++
++  return normalizedModelName;
++}
++
++function buildPricingCatalog(modelNames) {
++  const uniqueModelNames = Array.from(
++    new Set((modelNames || []).map((modelName) => normalizeModelName(modelName)).filter(Boolean))
++  );
++  const groups = new Map();
++
++  for (const modelName of uniqueModelNames) {
++    const pricing = getPricingForModel(modelName);
++    const displayName = formatCatalogModelName(modelName, pricing);
++    const groupKey = pricing
++      ? [
++          pricing.inputPerMillion,
++          pricing.cachedInputPerMillion,
++          pricing.outputPerMillion,
++        ].join("|")
++      : `missing:${displayName}`;
++    const existingGroup = groups.get(groupKey) || {
++      modelNames: [],
++      inputPerMillion: pricing?.inputPerMillion ?? null,
++      cachedInputPerMillion: pricing?.cachedInputPerMillion ?? null,
++      outputPerMillion: pricing?.outputPerMillion ?? null,
++      sourceType: pricing?.sourceType ?? "missing",
++      sourceLabel: pricing?.sourceLabel ?? "没有找到价格映射",
++      sourceUrl: pricing?.sourceUrl ?? null,
++    };
++
++    if (!existingGroup.modelNames.includes(displayName)) {
++      existingGroup.modelNames.push(displayName);
++    }
++
++    if (pricing && existingGroup.modelNames.length > 1) {
++      existingGroup.sourceType = "grouped";
++      existingGroup.sourceLabel = "价格相同，已合并展示";
++      existingGroup.sourceUrl = pricing.sourceUrl || existingGroup.sourceUrl;
++    }
++
++    groups.set(groupKey, existingGroup);
++  }
++
++  return Array.from(groups.values())
++    .map((group) => ({
++      modelName: group.modelNames.join(" / "),
++      inputPerMillion: group.inputPerMillion,
++      cachedInputPerMillion: group.cachedInputPerMillion,
++      outputPerMillion: group.outputPerMillion,
++      sourceType: group.sourceType,
++      sourceLabel: group.sourceLabel,
++      sourceUrl: group.sourceUrl,
++    }))
++    .sort((left, right) => {
++      const leftMissing = left.inputPerMillion === null ? 1 : 0;
++      const rightMissing = right.inputPerMillion === null ? 1 : 0;
++
++      if (leftMissing !== rightMissing) {
++        return leftMissing - rightMissing;
++      }
++
++      if ((left.inputPerMillion || 0) !== (right.inputPerMillion || 0)) {
++        return (left.inputPerMillion || 0) - (right.inputPerMillion || 0);
++      }
++
++      if ((left.outputPerMillion || 0) !== (right.outputPerMillion || 0)) {
++        return (left.outputPerMillion || 0) - (right.outputPerMillion || 0);
++      }
++
++      return left.modelName.localeCompare(right.modelName);
++    });
++}
++
+ function estimateCost(tokenUsage, modelName) {
+   const pricing = getPricingForModel(modelName);
+   if (!tokenUsage || !pricing) {
+@@ -202,6 +285,7 @@ function estimateCost(tokenUsage, modelName) {
+ }
+ 
+ module.exports = {
++  buildPricingCatalog,
+   normalizeModelName,
+   getPricingForModel,
+   estimateCost,
+diff --git a/test/app.test.js b/test/app.test.js
+index c4fdfc4..3578813 100644
+--- a/test/app.test.js
++++ b/test/app.test.js
+@@ -73,8 +73,45 @@ function createFixtureCodexHome() {
+   return codexHome;
+ }
+ 
++function createAlternateCodexHome() {
++  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "codex-http-alt-"));
++  const codexHome = path.join(tempDir, ".codex");
++  const dbPath = path.join(codexHome, "state_5.sqlite");
++
++  fs.mkdirSync(path.dirname(dbPath), { recursive: true });
++  execFileSync("sqlite3", [
++    dbPath,
++    `
++      CREATE TABLE threads (
++        id TEXT PRIMARY KEY,
++        rollout_path TEXT NOT NULL,
++        created_at INTEGER NOT NULL,
++        updated_at INTEGER NOT NULL,
++        source TEXT NOT NULL,
++        model_provider TEXT NOT NULL,
++        cwd TEXT NOT NULL,
++        title TEXT NOT NULL,
++        sandbox_policy TEXT NOT NULL,
++        approval_mode TEXT NOT NULL,
++        tokens_used INTEGER NOT NULL DEFAULT 0,
++        has_user_event INTEGER NOT NULL DEFAULT 0,
++        archived INTEGER NOT NULL DEFAULT 0,
++        archived_at INTEGER
++      );
++      INSERT INTO threads (
++        id, rollout_path, created_at, updated_at, source, model_provider, cwd, title,
++        sandbox_policy, approval_mode, tokens_used, has_user_event, archived, archived_at
++      ) VALUES
++        ('thread-alt', '/tmp/alt.jsonl', 1772940000, 1772940300, 'vscode', 'openai', '/workspace/alt', 'alt thread', 'danger', 'never', 9900, 1, 0, NULL);
++    `,
++  ]);
++
++  return codexHome;
++}
++
+ test("snapshot endpoint returns normalized JSON and stream endpoint exposes SSE", async () => {
+   const codexHome = createFixtureCodexHome();
++  const alternateCodexHome = createAlternateCodexHome();
+   const server = createAppServer({ codexHome, refreshIntervalMs: 50 });
+ 
+   await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+@@ -91,11 +128,31 @@ test("snapshot endpoint returns normalized JSON and stream endpoint exposes SSE"
+     const pageResponse = await fetch(`http://127.0.0.1:${port}/`);
+     assert.equal(pageResponse.status, 200);
+     assert.match(pageResponse.headers.get("content-type"), /text\/html/);
++    const pageHtml = await pageResponse.text();
++    assert.match(pageHtml, /tab-trigger/);
++    assert.match(pageHtml, /data-billing-scope="month"/);
++    assert.match(pageHtml, /账单明细/);
++    assert.match(pageHtml, /时间范围/);
+ 
+     const assetResponse = await fetch(`http://127.0.0.1:${port}/app.js`);
+     assert.equal(assetResponse.status, 200);
+     assert.match(assetResponse.headers.get("content-type"), /application\/javascript/);
+ 
++    const updateResponse = await fetch(`http://127.0.0.1:${port}/api/source`, {
++      method: "POST",
++      headers: {
++        "content-type": "application/json",
++      },
++      body: JSON.stringify({
++        codexHome: alternateCodexHome,
++      }),
++    });
++    assert.equal(updateResponse.status, 200);
++
++    const updatedSnapshot = await (await fetch(`http://127.0.0.1:${port}/api/snapshot`)).json();
++    assert.equal(updatedSnapshot.sources.codexHome, alternateCodexHome);
++    assert.equal(updatedSnapshot.overview.totalTokens, 9900);
++
+     const streamResponse = await fetch(`http://127.0.0.1:${port}/api/stream`);
+     assert.equal(streamResponse.status, 200);
+     assert.match(streamResponse.headers.get("content-type"), /text\/event-stream/);
+diff --git a/test/dashboardView.test.js b/test/dashboardView.test.js
+index 1f86195..8b38d7d 100644
+--- a/test/dashboardView.test.js
++++ b/test/dashboardView.test.js
+@@ -6,15 +6,70 @@ const {
+   formatPercent,
+   formatResetTime,
+   formatUsd,
++  buildCombinedChartMarkup,
++  calculateResetProgress,
++  formatModelLabel,
++  getScopeRows,
++  summarizeLedgerRows,
++  getVisibleLedgerRows,
+ } = require("../public/app.js");
+ 
+ test("dashboard formatters render readable token and quota values", () => {
+   assert.equal(formatTokenMillions(35000000), "35M");
+   assert.equal(formatTokenMillions(5013157), "5.01M");
+   assert.equal(formatPercent(12), "12%");
+-  assert.equal(formatUsd(0.005363), "$0.0054");
++  assert.equal(formatUsd(0.005363), "$0.01");
++  assert.equal(formatUsd(12), "$12.00");
+   assert.match(
+     formatResetTime(1772950000),
+     /2026|03|08|09/
+   );
+ });
++
++test("combined chart markup includes hover targets for token and cost values", () => {
++  const markup = buildCombinedChartMarkup([
++    { day: "2026-03-07", totalTokens: 1500000, totalUsd: 2.4 },
++    { day: "2026-03-08", totalTokens: 2400000, totalUsd: 3.25 },
++  ]);
++
++  assert.match(markup, /chart-line-token/);
++  assert.match(markup, /chart-line-cost/);
++  assert.match(markup, /data-day="2026-03-07"/);
++  assert.match(markup, /data-cost="\$3.25"/);
++  assert.match(markup, /chart-y-axis chart-y-axis-token/);
++  assert.match(markup, /chart-brush/);
++});
++
++test("reset progress exposes elapsed and remaining percentages", () => {
++  const progress = calculateResetProgress({
++    generatedAt: "2026-03-08T05:30:00.000Z",
++    resetsAt: 1772956800,
++    windowMinutes: 300,
++  });
++
++  assert.equal(progress.elapsedPercent, 50);
++  assert.equal(progress.remainingPercent, 50);
++});
++
++test("gpt-5.4 codex alias is rendered as GPT-5.4", () => {
++  assert.equal(formatModelLabel("gpt-5.4-codex"), "GPT-5.4");
++  assert.equal(formatModelLabel("gpt-5.1-codex"), "gpt-5.1-codex");
++});
++
++test("billing scope and range helpers support natural month and visible slices", () => {
++  const rows = [
++    { day: "2026-03-08", totalTokens: 500000, totalUsd: 10 },
++    { day: "2026-03-07", totalTokens: 400000, totalUsd: 8 },
++    { day: "2026-02-28", totalTokens: 300000, totalUsd: 6 },
++  ];
++
++  const monthRows = getScopeRows(rows, "2026-03-08T10:00:00.000Z", "month");
++  assert.deepEqual(monthRows.map((row) => row.day), ["2026-03-08", "2026-03-07"]);
++
++  const visibleRows = getVisibleLedgerRows(monthRows, 0, 1);
++  assert.deepEqual(visibleRows.map((row) => row.day), ["2026-03-08", "2026-03-07"]);
++
++  const summary = summarizeLedgerRows(monthRows);
++  assert.equal(summary.totalTokens, 900000);
++  assert.equal(summary.totalUsd, 18);
++});
+diff --git a/test/usageRepository.test.js b/test/usageRepository.test.js
+index a3cb9bb..c8965b7 100644
+--- a/test/usageRepository.test.js
++++ b/test/usageRepository.test.js
+@@ -6,6 +6,7 @@ const path = require("node:path");
+ const { execFileSync } = require("node:child_process");
+ 
+ const { loadSnapshot } = require("../server/lib/usageRepository");
++const { buildPricingCatalog } = require("../server/lib/pricing");
+ 
+ function writeJsonl(filePath, rows) {
+   fs.mkdirSync(path.dirname(filePath), { recursive: true });
+@@ -188,3 +189,118 @@ test("loadSnapshot aggregates sqlite history and latest live token/rate-limit ev
+   assert.equal(snapshot.pricingCatalog[0].modelName, "gpt-5-codex");
+   assert.equal(snapshot.pricingCatalog[0].inputPerMillion, 1.25);
+ });
++
++test("pricing catalog groups models with identical pricing and removes the gpt-5.4-codex label", () => {
++  const catalog = buildPricingCatalog([
++    "gpt-5-codex",
++    "gpt-5.1-codex",
++    "gpt-5.1-codex-max",
++    "gpt-5.4",
++    "gpt-5.4-codex",
++    "gpt-5.1-codex-mini",
++  ]);
++
++  assert.equal(catalog.length, 3);
++  assert.equal(catalog[0].modelName, "gpt-5-codex / gpt-5.1-codex / gpt-5.1-codex-max");
++  assert.equal(catalog[1].modelName, "GPT-5.4");
++  assert.equal(catalog[2].modelName, "gpt-5.1-codex-mini");
++  assert.ok(catalog.every((row) => row.modelName !== "gpt-5.4-codex"));
++  assert.ok(catalog.every((row) => row.modelName !== "GPT-5.4 / GPT-5.4"));
++});
++
++test("loadSnapshot chooses the newest rate-limit event by rateLimitsAt instead of thread latestTimestamp", async () => {
++  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "codex-usage-ratelimit-"));
++  const codexHome = path.join(tempDir, ".codex");
++  const dbPath = path.join(codexHome, "state_5.sqlite");
++
++  createSqliteDb(dbPath);
++
++  writeJsonl(
++    path.join(codexHome, "sessions", "2026", "03", "08", "a-thread-1.jsonl"),
++    [
++      {
++        timestamp: "2026-03-08T04:00:00.000Z",
++        type: "session_meta",
++        payload: { id: "thread-1", model_provider: "openai" },
++      },
++      {
++        timestamp: "2026-03-08T04:00:01.000Z",
++        type: "turn_context",
++        payload: { turn_id: "turn-1", model: "gpt-5-codex" },
++      },
++      {
++        timestamp: "2026-03-08T04:01:00.000Z",
++        type: "event_msg",
++        payload: {
++          type: "token_count",
++          info: {
++            total_token_usage: { total_tokens: 100, input_tokens: 40, cached_input_tokens: 0, output_tokens: 60, reasoning_output_tokens: 0 },
++            last_token_usage: { total_tokens: 100, input_tokens: 40, cached_input_tokens: 0, output_tokens: 60, reasoning_output_tokens: 0 },
++            model_context_window: 950000,
++          },
++          rate_limits: {
++            limit_id: "codex",
++            primary: { used_percent: 12, window_minutes: 300, resets_at: 1772950000 },
++            secondary: { used_percent: 37, window_minutes: 10080, resets_at: 1773200000 },
++            credits: null,
++            plan_type: "pro",
++          },
++        },
++      },
++      {
++        timestamp: "2026-03-08T04:10:00.000Z",
++        type: "event_msg",
++        payload: {
++          type: "token_count",
++          info: {
++            total_token_usage: { total_tokens: 120, input_tokens: 50, cached_input_tokens: 0, output_tokens: 70, reasoning_output_tokens: 0 },
++            last_token_usage: { total_tokens: 20, input_tokens: 10, cached_input_tokens: 0, output_tokens: 10, reasoning_output_tokens: 0 },
++            model_context_window: 950000,
++          },
++          rate_limits: null,
++        },
++      },
++    ]
++  );
++
++  writeJsonl(
++    path.join(codexHome, "sessions", "2026", "03", "08", "b-thread-2.jsonl"),
++    [
++      {
++        timestamp: "2026-03-08T04:00:00.000Z",
++        type: "session_meta",
++        payload: { id: "thread-2", model_provider: "openai" },
++      },
++      {
++        timestamp: "2026-03-08T04:00:01.000Z",
++        type: "turn_context",
++        payload: { turn_id: "turn-2", model: "gpt-5-codex" },
++      },
++      {
++        timestamp: "2026-03-08T04:05:00.000Z",
++        type: "event_msg",
++        payload: {
++          type: "token_count",
++          info: {
++            total_token_usage: { total_tokens: 200, input_tokens: 80, cached_input_tokens: 0, output_tokens: 120, reasoning_output_tokens: 0 },
++            last_token_usage: { total_tokens: 200, input_tokens: 80, cached_input_tokens: 0, output_tokens: 120, reasoning_output_tokens: 0 },
++            model_context_window: 950000,
++          },
++          rate_limits: {
++            limit_id: "codex",
++            primary: { used_percent: 4, window_minutes: 300, resets_at: 1772977197 },
++            secondary: { used_percent: 4, window_minutes: 10080, resets_at: 1773544636 },
++            credits: null,
++            plan_type: "pro",
++          },
++        },
++      },
++    ]
++  );
++
++  const snapshot = await loadSnapshot({ codexHome, now: new Date("2026-03-08T04:12:00.000Z") });
++
++  assert.equal(snapshot.live.rateLimits.primary.usedPercent, 4);
++  assert.equal(snapshot.live.rateLimits.secondary.usedPercent, 4);
++  assert.equal(snapshot.live.latestRateLimitAt, "2026-03-08T04:05:00.000Z");
++});

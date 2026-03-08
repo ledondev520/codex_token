@@ -1,18 +1,24 @@
 const { loadSnapshot } = require("./usageRepository");
+const { loadSnapshotInBackground } = require("./loadSnapshotChild");
 
 function createLiveSnapshotService(options = {}) {
   const listeners = new Set();
-  const refreshIntervalMs = options.refreshIntervalMs || 5000;
+  const runtimeOptions = { ...options };
+  const loadSnapshotFn = runtimeOptions.loadSnapshotFn || loadSnapshot;
+  const loadSnapshotInBackgroundFn =
+    runtimeOptions.loadSnapshotInBackgroundFn || loadSnapshotInBackground;
+  const refreshIntervalMs = runtimeOptions.refreshIntervalMs || 5000;
   let timer = null;
   let latestSnapshotPromise = null;
-  let latestSnapshot = null;
-  let fullRefreshStarted = false;
+  let latestSnapshot = createPlaceholderSnapshot();
+  let warmupScheduled = false;
+  let fullRefreshScheduled = false;
 
   function createPlaceholderSnapshot() {
     return {
       generatedAt: new Date().toISOString(),
       sources: {
-        codexHome: options.codexHome || process.env.CODEX_HOME || null,
+        codexHome: runtimeOptions.codexHome || process.env.CODEX_HOME || null,
       },
       overview: {
         totalThreads: 0,
@@ -20,6 +26,7 @@ function createLiveSnapshotService(options = {}) {
         latestUpdatedAt: null,
         totalEstimatedCost: 0,
       },
+      openclaw: null,
       dailyLedger: [],
       pricingCatalog: [],
       live: {
@@ -36,43 +43,64 @@ function createLiveSnapshotService(options = {}) {
     };
   }
 
+  function emitSnapshot(snapshot) {
+    for (const listener of listeners) {
+      listener(snapshot);
+    }
+  }
+
   async function loadFastSnapshot() {
-    const snapshot = await loadSnapshot({
-      ...options,
+    const snapshot = await loadSnapshotFn({
+      ...runtimeOptions,
       skipSessionParsing: true,
     });
     latestSnapshot = { ...snapshot, loading: true };
-    return snapshot;
-  }
-
-  async function refresh() {
-    latestSnapshotPromise = loadSnapshot({
-      ...options,
-      recentSessionFileLimit: options.recentSessionFileLimit || 40,
-      ledgerFileLimit: options.ledgerFileLimit || 217,
-    });
-    const snapshot = await latestSnapshotPromise;
-    latestSnapshot = { ...snapshot, loading: false };
-
-    for (const listener of listeners) {
-      listener(latestSnapshot);
-    }
-
+    emitSnapshot(latestSnapshot);
     return latestSnapshot;
   }
 
-  function primeSnapshots() {
-    if (!latestSnapshotPromise) {
-      latestSnapshotPromise = loadFastSnapshot().catch(() => {
-        latestSnapshot = createPlaceholderSnapshot();
-        return latestSnapshot;
-      });
+  async function refresh() {
+    latestSnapshotPromise = loadSnapshotInBackgroundFn({
+      ...runtimeOptions,
+      recentSessionFileLimit: runtimeOptions.recentSessionFileLimit || 40,
+      ledgerFileLimit: runtimeOptions.ledgerFileLimit || 217,
+    });
+    const snapshot = await latestSnapshotPromise;
+    latestSnapshot = { ...snapshot, loading: false };
+    emitSnapshot(latestSnapshot);
+    return latestSnapshot;
+  }
+
+  function scheduleBackgroundRefresh() {
+    if (fullRefreshScheduled) {
+      return;
     }
 
-    if (!fullRefreshStarted) {
-      fullRefreshStarted = true;
+    fullRefreshScheduled = true;
+    setTimeout(() => {
       refresh().catch(() => {});
+    }, 0);
+  }
+
+  function primeSnapshots() {
+    if (warmupScheduled) {
+      return;
     }
+
+    warmupScheduled = true;
+    latestSnapshot = latestSnapshot || createPlaceholderSnapshot();
+
+    setTimeout(async () => {
+      try {
+        latestSnapshotPromise = loadFastSnapshot();
+        await latestSnapshotPromise;
+      } catch {
+        latestSnapshot = createPlaceholderSnapshot();
+      } finally {
+        latestSnapshotPromise = null;
+        scheduleBackgroundRefresh();
+      }
+    }, 0);
   }
 
   function subscribe(listener) {
@@ -98,8 +126,19 @@ function createLiveSnapshotService(options = {}) {
     };
   }
 
+  async function setCodexHome(codexHome) {
+    runtimeOptions.codexHome = codexHome;
+    latestSnapshotPromise = null;
+    latestSnapshot = createPlaceholderSnapshot();
+    warmupScheduled = false;
+    fullRefreshScheduled = false;
+    primeSnapshots();
+    return refresh();
+  }
+
   return {
     refresh,
+    setCodexHome,
     subscribe,
     primeSnapshots,
     getCurrentSnapshot: () => {

@@ -6,6 +6,7 @@ const path = require("node:path");
 const { execFileSync } = require("node:child_process");
 
 const { loadSnapshot } = require("../server/lib/usageRepository");
+const { buildPricingCatalog } = require("../server/lib/pricing");
 
 function writeJsonl(filePath, rows) {
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
@@ -72,6 +73,14 @@ test("loadSnapshot aggregates sqlite history and latest live token/rate-limit ev
       payload: {
         turn_id: "turn-1",
         model: "gpt-5-codex",
+      },
+    },
+    {
+      timestamp: "2026-03-08T04:02:20.000Z",
+      type: "event_msg",
+      payload: {
+        type: "user_message",
+        message: "请把模型价格表按相同价格合并展示",
       },
     },
     {
@@ -168,23 +177,147 @@ test("loadSnapshot aggregates sqlite history and latest live token/rate-limit ev
     ]
   );
 
-  const snapshot = await loadSnapshot({ codexHome, now: new Date("2026-03-08T04:10:00.000Z") });
+  const snapshot = await loadSnapshot({
+    codexHome,
+    now: new Date("2026-03-08T04:10:00.000Z"),
+    loadOpenClawUsageFn: async () => null,
+  });
 
   assert.equal(snapshot.overview.totalThreads, 2);
   assert.equal(snapshot.overview.totalTokens, 4600);
-  assert.ok(Math.abs(snapshot.overview.totalEstimatedCost - 0.0019525) < 0.000001);
+  assert.ok(Math.abs(snapshot.overview.totalEstimatedCost - 0.0016775) < 0.000001);
   assert.equal(snapshot.live.currentSession.totalTokens, 2400);
   assert.equal(snapshot.live.currentSession.lastTokens, 380);
   assert.equal(snapshot.live.currentSession.modelName, "gpt-5-codex");
-  assert.ok(Math.abs(snapshot.live.currentSession.cost.totalUsd - 0.0083125) < 0.000001);
+  assert.ok(Math.abs(snapshot.live.currentSession.cost.totalUsd - 0.0076875) < 0.000001);
   assert.equal(snapshot.live.rateLimits.planType, "pro");
   assert.equal(snapshot.live.rateLimits.primary.label, "5小时窗口");
   assert.equal(snapshot.live.rateLimits.primary.usedPercent, 12);
   assert.equal(snapshot.recentThreads[0].id, "thread-2");
   assert.equal(snapshot.recentThreads[0].modelName, "gpt-5-codex");
+  assert.equal(snapshot.recentThreads[0].promptText, "请把模型价格表按相同价格合并展示");
   assert.equal(snapshot.dailyUsage[0].totalTokens, 4600);
   assert.equal(snapshot.dailyLedger[0].totalTokens, 630);
-  assert.ok(Math.abs(snapshot.dailyLedger[0].totalUsd - 0.0019525) < 0.000001);
+  assert.ok(Math.abs(snapshot.dailyLedger[0].totalUsd - 0.0016775) < 0.000001);
   assert.equal(snapshot.pricingCatalog[0].modelName, "gpt-5-codex");
   assert.equal(snapshot.pricingCatalog[0].inputPerMillion, 1.25);
+});
+
+test("pricing catalog groups models with identical pricing and removes the gpt-5.4-codex label", () => {
+  const catalog = buildPricingCatalog([
+    "gpt-5-codex",
+    "gpt-5.1-codex",
+    "gpt-5.1-codex-max",
+    "gpt-5.4",
+    "gpt-5.4-codex",
+    "gpt-5.1-codex-mini",
+  ]);
+
+  assert.equal(catalog.length, 2);
+  assert.equal(catalog[0].modelName, "gpt-5-codex / gpt-5.1-codex / gpt-5.1-codex-max");
+  assert.equal(catalog[1].modelName, "GPT-5.4");
+  assert.ok(catalog.every((row) => row.modelName !== "gpt-5.4-codex"));
+  assert.ok(catalog.every((row) => row.modelName !== "GPT-5.4 / GPT-5.4"));
+  assert.ok(catalog.every((row) => row.modelName !== "gpt-5.1-codex-mini"));
+});
+
+test("loadSnapshot chooses the newest rate-limit event by rateLimitsAt instead of thread latestTimestamp", async () => {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "codex-usage-ratelimit-"));
+  const codexHome = path.join(tempDir, ".codex");
+  const dbPath = path.join(codexHome, "state_5.sqlite");
+
+  createSqliteDb(dbPath);
+
+  writeJsonl(
+    path.join(codexHome, "sessions", "2026", "03", "08", "a-thread-1.jsonl"),
+    [
+      {
+        timestamp: "2026-03-08T04:00:00.000Z",
+        type: "session_meta",
+        payload: { id: "thread-1", model_provider: "openai" },
+      },
+      {
+        timestamp: "2026-03-08T04:00:01.000Z",
+        type: "turn_context",
+        payload: { turn_id: "turn-1", model: "gpt-5-codex" },
+      },
+      {
+        timestamp: "2026-03-08T04:01:00.000Z",
+        type: "event_msg",
+        payload: {
+          type: "token_count",
+          info: {
+            total_token_usage: { total_tokens: 100, input_tokens: 40, cached_input_tokens: 0, output_tokens: 60, reasoning_output_tokens: 0 },
+            last_token_usage: { total_tokens: 100, input_tokens: 40, cached_input_tokens: 0, output_tokens: 60, reasoning_output_tokens: 0 },
+            model_context_window: 950000,
+          },
+          rate_limits: {
+            limit_id: "codex",
+            primary: { used_percent: 12, window_minutes: 300, resets_at: 1772950000 },
+            secondary: { used_percent: 37, window_minutes: 10080, resets_at: 1773200000 },
+            credits: null,
+            plan_type: "pro",
+          },
+        },
+      },
+      {
+        timestamp: "2026-03-08T04:10:00.000Z",
+        type: "event_msg",
+        payload: {
+          type: "token_count",
+          info: {
+            total_token_usage: { total_tokens: 120, input_tokens: 50, cached_input_tokens: 0, output_tokens: 70, reasoning_output_tokens: 0 },
+            last_token_usage: { total_tokens: 20, input_tokens: 10, cached_input_tokens: 0, output_tokens: 10, reasoning_output_tokens: 0 },
+            model_context_window: 950000,
+          },
+          rate_limits: null,
+        },
+      },
+    ]
+  );
+
+  writeJsonl(
+    path.join(codexHome, "sessions", "2026", "03", "08", "b-thread-2.jsonl"),
+    [
+      {
+        timestamp: "2026-03-08T04:00:00.000Z",
+        type: "session_meta",
+        payload: { id: "thread-2", model_provider: "openai" },
+      },
+      {
+        timestamp: "2026-03-08T04:00:01.000Z",
+        type: "turn_context",
+        payload: { turn_id: "turn-2", model: "gpt-5-codex" },
+      },
+      {
+        timestamp: "2026-03-08T04:05:00.000Z",
+        type: "event_msg",
+        payload: {
+          type: "token_count",
+          info: {
+            total_token_usage: { total_tokens: 200, input_tokens: 80, cached_input_tokens: 0, output_tokens: 120, reasoning_output_tokens: 0 },
+            last_token_usage: { total_tokens: 200, input_tokens: 80, cached_input_tokens: 0, output_tokens: 120, reasoning_output_tokens: 0 },
+            model_context_window: 950000,
+          },
+          rate_limits: {
+            limit_id: "codex",
+            primary: { used_percent: 4, window_minutes: 300, resets_at: 1772977197 },
+            secondary: { used_percent: 4, window_minutes: 10080, resets_at: 1773544636 },
+            credits: null,
+            plan_type: "pro",
+          },
+        },
+      },
+    ]
+  );
+
+  const snapshot = await loadSnapshot({
+    codexHome,
+    now: new Date("2026-03-08T04:12:00.000Z"),
+    loadOpenClawUsageFn: async () => null,
+  });
+
+  assert.equal(snapshot.live.rateLimits.primary.usedPercent, 4);
+  assert.equal(snapshot.live.rateLimits.secondary.usedPercent, 4);
+  assert.equal(snapshot.live.latestRateLimitAt, "2026-03-08T04:05:00.000Z");
 });

@@ -172,17 +172,107 @@ function getPricingForModel(modelName) {
   return null;
 }
 
+function formatCatalogModelName(modelName, pricing) {
+  const normalizedModelName = normalizeModelName(modelName);
+
+  if (
+    normalizedModelName === "gpt-5.4" ||
+    normalizedModelName === "gpt-5.4-codex" ||
+    pricing?.pricingModelName === "gpt-5.4"
+  ) {
+    return "GPT-5.4";
+  }
+
+  return normalizedModelName;
+}
+
+function buildPricingCatalog(modelNames) {
+  const uniqueModelNames = Array.from(
+    new Set(
+      (modelNames || [])
+        .map((modelName) => normalizeModelName(modelName))
+        .filter((modelName) => Boolean(modelName) && modelName !== "gpt-5.1-codex-mini")
+    )
+  );
+  const groups = new Map();
+
+  for (const modelName of uniqueModelNames) {
+    const pricing = getPricingForModel(modelName);
+    const displayName = formatCatalogModelName(modelName, pricing);
+    const groupKey = pricing
+      ? [
+          pricing.inputPerMillion,
+          pricing.cachedInputPerMillion,
+          pricing.outputPerMillion,
+        ].join("|")
+      : `missing:${displayName}`;
+    const existingGroup = groups.get(groupKey) || {
+      modelNames: [],
+      inputPerMillion: pricing?.inputPerMillion ?? null,
+      cachedInputPerMillion: pricing?.cachedInputPerMillion ?? null,
+      outputPerMillion: pricing?.outputPerMillion ?? null,
+      sourceType: pricing?.sourceType ?? "missing",
+      sourceLabel: pricing?.sourceLabel ?? "没有找到价格映射",
+      sourceUrl: pricing?.sourceUrl ?? null,
+    };
+
+    if (!existingGroup.modelNames.includes(displayName)) {
+      existingGroup.modelNames.push(displayName);
+    }
+
+    if (pricing && existingGroup.modelNames.length > 1) {
+      existingGroup.sourceType = "grouped";
+      existingGroup.sourceLabel = "价格相同，已合并展示";
+      existingGroup.sourceUrl = pricing.sourceUrl || existingGroup.sourceUrl;
+    }
+
+    groups.set(groupKey, existingGroup);
+  }
+
+  return Array.from(groups.values())
+    .map((group) => ({
+      modelName: group.modelNames.join(" / "),
+      inputPerMillion: group.inputPerMillion,
+      cachedInputPerMillion: group.cachedInputPerMillion,
+      outputPerMillion: group.outputPerMillion,
+      sourceType: group.sourceType,
+      sourceLabel: group.sourceLabel,
+      sourceUrl: group.sourceUrl,
+    }))
+    .sort((left, right) => {
+      const leftMissing = left.inputPerMillion === null ? 1 : 0;
+      const rightMissing = right.inputPerMillion === null ? 1 : 0;
+
+      if (leftMissing !== rightMissing) {
+        return leftMissing - rightMissing;
+      }
+
+      if ((left.inputPerMillion || 0) !== (right.inputPerMillion || 0)) {
+        return (left.inputPerMillion || 0) - (right.inputPerMillion || 0);
+      }
+
+      if ((left.outputPerMillion || 0) !== (right.outputPerMillion || 0)) {
+        return (left.outputPerMillion || 0) - (right.outputPerMillion || 0);
+      }
+
+      return left.modelName.localeCompare(right.modelName);
+    });
+}
+
 function estimateCost(tokenUsage, modelName) {
   const pricing = getPricingForModel(modelName);
   if (!tokenUsage || !pricing) {
     return null;
   }
 
-  const inputUsd = (Number(tokenUsage.inputTokens || 0) / 1_000_000) * pricing.inputPerMillion;
+  const totalInputTokens = Number(tokenUsage.inputTokens || 0);
+  const cachedInputTokens = Number(tokenUsage.cachedInputTokens || 0);
+  const uncachedInputTokens = Math.max(0, totalInputTokens - cachedInputTokens);
+  const inputUsd = (uncachedInputTokens / 1_000_000) * pricing.inputPerMillion;
   const cachedInputUsd =
     pricing.cachedInputPerMillion === null
       ? null
-      : (Number(tokenUsage.cachedInputTokens || 0) / 1_000_000) * pricing.cachedInputPerMillion;
+      : (cachedInputTokens / 1_000_000) * pricing.cachedInputPerMillion;
   const outputUsd = (Number(tokenUsage.outputTokens || 0) / 1_000_000) * pricing.outputPerMillion;
 
   return {
@@ -202,6 +292,7 @@ function estimateCost(tokenUsage, modelName) {
 }
 
 module.exports = {
+  buildPricingCatalog,
   normalizeModelName,
   getPricingForModel,
   estimateCost,

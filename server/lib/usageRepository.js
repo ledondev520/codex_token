@@ -3,7 +3,8 @@ const path = require("node:path");
 const { execFileSync } = require("node:child_process");
 
 const { resolveCodexPaths } = require("./codexPaths");
-const { estimateCost, getPricingForModel, normalizeModelName } = require("./pricing");
+const { loadOpenClawUsageSnapshot } = require("./openclawUsageRepository");
+const { buildPricingCatalog, estimateCost, normalizeModelName } = require("./pricing");
 
 function runSqliteJson(dbPath, query) {
   if (!fs.existsSync(dbPath)) {
@@ -38,7 +39,9 @@ function getThreadSummary(stateDbPath) {
   };
 }
 
-function getRecentThreads(stateDbPath, limit = 10) {
+function getRecentThreads(stateDbPath, limit = null) {
+  const hasLimit = limit !== null && limit !== undefined && Number.isFinite(Number(limit));
+  const limitClause = hasLimit ? `LIMIT ${Number(limit)}` : "";
   const rows = runSqliteJson(
     stateDbPath,
     `
@@ -51,9 +54,8 @@ function getRecentThreads(stateDbPath, limit = 10) {
         created_at,
         updated_at
       FROM threads
-      WHERE archived = 0
       ORDER BY updated_at DESC
-      LIMIT ${Number(limit)};
+      ${limitClause};
     `
   );
 
@@ -230,6 +232,8 @@ function extractSessionDetails(filePath, options = {}) {
     rateLimitsAt: null,
     modelName: null,
     modelAt: null,
+    promptText: null,
+    promptAt: null,
     ledgerEntries: [],
     modelsUsed: [],
   };
@@ -257,6 +261,16 @@ function extractSessionDetails(filePath, options = {}) {
       details.latestTimestamp = parsed.timestamp || details.latestTimestamp;
       if (currentModelName) {
         modelSet.add(currentModelName);
+      }
+      continue;
+    }
+
+    if (parsed.type === "event_msg" && parsed.payload?.type === "user_message") {
+      const promptText = String(parsed.payload.message || "").trim();
+      if (promptText) {
+        details.promptText = promptText;
+        details.promptAt = parsed.timestamp || details.promptAt;
+        details.latestTimestamp = parsed.timestamp || details.latestTimestamp;
       }
       continue;
     }
@@ -306,6 +320,8 @@ function mergeSessionDetails(existing, incoming) {
   const incomingRateLimitTime = new Date(incoming.rateLimitsAt || 0).getTime();
   const existingModelTime = new Date(existing.modelAt || 0).getTime();
   const incomingModelTime = new Date(incoming.modelAt || 0).getTime();
+  const existingPromptTime = new Date(existing.promptAt || 0).getTime();
+  const incomingPromptTime = new Date(incoming.promptAt || 0).getTime();
   const merged = {
     ...existing,
     ...incoming,
@@ -334,6 +350,14 @@ function mergeSessionDetails(existing, incoming) {
       incoming.modelName && incomingModelTime >= existingModelTime
         ? incoming.modelAt
         : existing.modelAt,
+    promptText:
+      incoming.promptText && incomingPromptTime >= existingPromptTime
+        ? incoming.promptText
+        : existing.promptText,
+    promptAt:
+      incoming.promptText && incomingPromptTime >= existingPromptTime
+        ? incoming.promptAt
+        : existing.promptAt,
   };
 
   merged.cost = estimateCost(merged.tokenUsage, merged.modelName);
@@ -408,12 +432,18 @@ function getLatestLiveEvent(sessionMap) {
   let latestRateLimits = null;
 
   for (const candidate of sessionMap.values()) {
-    const candidateTimestamp = new Date(candidate.latestTimestamp || 0).getTime();
+    const candidateTokenTimestamp = new Date(
+      candidate.tokenUsageAt || candidate.latestTimestamp || 0
+    ).getTime();
+    const candidateRateLimitTimestamp = new Date(
+      candidate.rateLimitsAt || candidate.latestTimestamp || 0
+    ).getTime();
 
     if (
       candidate.tokenUsage &&
       (!latestTokenUsage ||
-        candidateTimestamp > new Date(latestTokenUsage.latestTimestamp || 0).getTime())
+        candidateTokenTimestamp >
+          new Date(latestTokenUsage.tokenUsageAt || latestTokenUsage.latestTimestamp || 0).getTime())
     ) {
       latestTokenUsage = candidate;
     }
@@ -421,7 +451,10 @@ function getLatestLiveEvent(sessionMap) {
     if (
       candidate.rateLimits &&
       (!latestRateLimits ||
-        candidateTimestamp > new Date(latestRateLimits.latestTimestamp || 0).getTime())
+        candidateRateLimitTimestamp >
+          new Date(
+            latestRateLimits.rateLimitsAt || latestRateLimits.latestTimestamp || 0
+          ).getTime())
     ) {
       latestRateLimits = candidate;
     }
@@ -450,6 +483,7 @@ function getLatestLiveEvent(sessionMap) {
 async function loadSnapshot(options = {}) {
   const paths = resolveCodexPaths(options.codexHome);
   const timeZone = options.timeZone || Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const loadOpenClawUsageFn = options.loadOpenClawUsageFn || loadOpenClawUsageSnapshot;
   const overview = getThreadSummary(paths.stateDbPath);
   const recentSessionMap = options.skipSessionParsing
     ? new Map()
@@ -465,39 +499,23 @@ async function loadSnapshot(options = {}) {
         ledgerFileLimit: options.ledgerFileLimit,
       });
   const latestLiveEvent = getLatestLiveEvent(recentSessionMap);
+  let openclaw = null;
+  if (!options.skipOpenClawUsage) {
+    try {
+      openclaw = await loadOpenClawUsageFn(options);
+    } catch {
+      openclaw = null;
+    }
+  }
   overview.totalEstimatedCost = dailyLedger.rows.reduce((sum, item) => sum + item.totalUsd, 0);
-  const pricingCatalog = dailyLedger.usedModels
-    .map((modelName) => {
-      const pricing = getPricingForModel(modelName);
-      return pricing
-        ? {
-            modelName,
-            pricingModelName: pricing.pricingModelName,
-            inputPerMillion: pricing.inputPerMillion,
-            cachedInputPerMillion: pricing.cachedInputPerMillion,
-            outputPerMillion: pricing.outputPerMillion,
-            sourceType: pricing.sourceType,
-            sourceLabel: pricing.sourceLabel,
-            sourceUrl: pricing.sourceUrl,
-          }
-        : {
-            modelName,
-            pricingModelName: null,
-            inputPerMillion: null,
-            cachedInputPerMillion: null,
-            outputPerMillion: null,
-            sourceType: "missing",
-            sourceLabel: "没有找到价格映射",
-            sourceUrl: null,
-          };
-    })
-    .sort((left, right) => left.modelName.localeCompare(right.modelName));
-  const recentThreads = getRecentThreads(paths.stateDbPath, options.recentThreadsLimit || 10).map(
+  const pricingCatalog = buildPricingCatalog(dailyLedger.usedModels);
+  const recentThreads = getRecentThreads(paths.stateDbPath, options.recentThreadsLimit).map(
     (thread) => {
       const sessionDetails = recentSessionMap.get(thread.id);
       return {
         ...thread,
         modelName: sessionDetails?.modelName || null,
+        promptText: sessionDetails?.promptText || null,
         tokenUsage: sessionDetails?.tokenUsage || null,
         cost: sessionDetails?.cost || null,
       };
@@ -514,6 +532,7 @@ async function loadSnapshot(options = {}) {
       archivedSessionsDir: paths.archivedSessionsDir,
     },
     overview,
+    openclaw,
     dailyLedger: dailyLedger.rows,
     pricingCatalog,
     live: {

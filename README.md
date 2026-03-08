@@ -11,9 +11,10 @@ A standalone local dashboard for Codex token usage and quota snapshots.
 ## What It Does
 
 - Reads local Codex usage data from `~/.codex`
+- Lets you switch the scanned local Codex folder from the dashboard UI
 - Aggregates SQLite history and recent session JSONL events
 - Serves a local dashboard with live updates
-- Shows token usage, quota snapshots, model pricing, and daily cost estimates
+- Shows token usage, quota snapshots, grouped model pricing, and daily cost estimates
 
 ## Run Locally
 
@@ -55,9 +56,10 @@ This project is licensed under the [MIT License](LICENSE).
 ## 功能特性
 
 - 从 `~/.codex` 读取本地 Codex 使用数据
+- 支持在仪表盘里切换要读取的本地 Codex 文件夹
 - 聚合 SQLite 历史记录与最近的会话 JSONL 事件
 - 启动一个支持实时更新的本地仪表盘服务
-- 展示 Token 使用量、配额快照、模型定价模型以及每日预估成本
+- 展示 Token 使用量、配额快照、合并后的模型价格以及每日预估成本
 
 ## 本地运行
 

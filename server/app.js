@@ -3,6 +3,7 @@ const path = require("node:path");
 const http = require("node:http");
 
 const { createLiveSnapshotService } = require("./lib/liveSnapshotService");
+const { resolveCodexHome, resolveSelectableCodexHome } = require("./lib/codexPaths");
 
 const MIME_TYPES = {
   ".html": "text/html; charset=utf-8",
@@ -39,9 +40,28 @@ function serveStaticFile(response, filePath) {
   response.end(fs.readFileSync(filePath));
 }
 
+function readJsonBody(request) {
+  return new Promise((resolve, reject) => {
+    let body = "";
+
+    request.on("data", (chunk) => {
+      body += chunk;
+    });
+    request.on("end", () => {
+      try {
+        resolve(body ? JSON.parse(body) : {});
+      } catch (error) {
+        reject(new Error("请求体不是有效的 JSON。"));
+      }
+    });
+    request.on("error", reject);
+  });
+}
+
 function createAppServer(options = {}) {
   const publicDir = options.publicDir || path.join(process.cwd(), "public");
   const liveSnapshotService = createLiveSnapshotService(options);
+  liveSnapshotService.primeSnapshots();
 
   return http.createServer(async (request, response) => {
     const url = new URL(request.url, "http://127.0.0.1");
@@ -74,6 +94,20 @@ function createAppServer(options = {}) {
 
       const unsubscribe = liveSnapshotService.subscribe(writeSnapshot);
       request.on("close", unsubscribe);
+      return;
+    }
+
+    if (request.method === "POST" && url.pathname === "/api/source") {
+      try {
+        const payload = await readJsonBody(request);
+        const nextCodexHome = payload?.codexHome
+          ? resolveSelectableCodexHome(payload.codexHome)
+          : resolveCodexHome();
+        const snapshot = await liveSnapshotService.setCodexHome(nextCodexHome);
+        sendJson(response, 200, snapshot);
+      } catch (error) {
+        sendJson(response, 400, { error: error.message });
+      }
       return;
     }
 

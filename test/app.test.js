@@ -73,9 +73,72 @@ function createFixtureCodexHome() {
   return codexHome;
 }
 
+function createAlternateCodexHome() {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "codex-http-alt-"));
+  const codexHome = path.join(tempDir, ".codex");
+  const dbPath = path.join(codexHome, "state_5.sqlite");
+
+  fs.mkdirSync(path.dirname(dbPath), { recursive: true });
+  execFileSync("sqlite3", [
+    dbPath,
+    `
+      CREATE TABLE threads (
+        id TEXT PRIMARY KEY,
+        rollout_path TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL,
+        source TEXT NOT NULL,
+        model_provider TEXT NOT NULL,
+        cwd TEXT NOT NULL,
+        title TEXT NOT NULL,
+        sandbox_policy TEXT NOT NULL,
+        approval_mode TEXT NOT NULL,
+        tokens_used INTEGER NOT NULL DEFAULT 0,
+        has_user_event INTEGER NOT NULL DEFAULT 0,
+        archived INTEGER NOT NULL DEFAULT 0,
+        archived_at INTEGER
+      );
+      INSERT INTO threads (
+        id, rollout_path, created_at, updated_at, source, model_provider, cwd, title,
+        sandbox_policy, approval_mode, tokens_used, has_user_event, archived, archived_at
+      ) VALUES
+        ('thread-alt', '/tmp/alt.jsonl', 1772940000, 1772940300, 'vscode', 'openai', '/workspace/alt', 'alt thread', 'danger', 'never', 9900, 1, 0, NULL);
+    `,
+  ]);
+
+  return codexHome;
+}
+
 test("snapshot endpoint returns normalized JSON and stream endpoint exposes SSE", async () => {
   const codexHome = createFixtureCodexHome();
-  const server = createAppServer({ codexHome, refreshIntervalMs: 50 });
+  const alternateCodexHome = createAlternateCodexHome();
+  const server = createAppServer({
+    codexHome,
+    refreshIntervalMs: 50,
+    loadOpenClawUsageFn: async () => ({
+      provider: "codex",
+      source: "local",
+      updatedAt: "2026-03-08T05:00:00.000Z",
+      session: {
+        totalTokens: 3200,
+        totalUsd: 1.2,
+      },
+      totals: {
+        totalTokens: 12800,
+        totalUsd: 3.6,
+      },
+      daily: [
+        {
+          day: "2026-03-08",
+          totalTokens: 3200,
+          totalUsd: 1.2,
+          modelsUsed: ["gpt-5.3-codex"],
+          modelBreakdowns: [{ modelName: "gpt-5.3-codex", totalUsd: 1.2 }],
+        },
+      ],
+      topModels: [{ modelName: "gpt-5.3-codex", totalUsd: 1.2 }],
+    }),
+  });
 
   await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
   const { port } = server.address();
@@ -87,14 +150,45 @@ test("snapshot endpoint returns normalized JSON and stream endpoint exposes SSE"
     const snapshot = await snapshotResponse.json();
     assert.equal(typeof snapshot.overview.totalTokens, "number");
     assert.equal(typeof snapshot.overview.totalThreads, "number");
+    assert.equal(snapshot.openclaw.provider, "codex");
+    assert.equal(snapshot.openclaw.session.totalTokens, 3200);
+    assert.equal(snapshot.openclaw.topModels[0].modelName, "gpt-5.3-codex");
 
     const pageResponse = await fetch(`http://127.0.0.1:${port}/`);
     assert.equal(pageResponse.status, 200);
     assert.match(pageResponse.headers.get("content-type"), /text\/html/);
+    const pageHtml = await pageResponse.text();
+    assert.match(pageHtml, /tab-trigger/);
+    assert.match(pageHtml, /data-billing-scope="month"/);
+    assert.match(pageHtml, /账单明细/);
+    assert.match(pageHtml, /时间范围/);
+    assert.match(pageHtml, /全部会话/);
+    assert.match(pageHtml, /会话ID/);
+    assert.match(pageHtml, /创建时间/);
+    assert.match(pageHtml, /详情/);
+    assert.match(pageHtml, /按标题筛选/);
+    assert.match(pageHtml, /按模型筛选/);
+    assert.match(pageHtml, /创建日期/);
+    assert.match(pageHtml, /Codex用量统计/);
 
     const assetResponse = await fetch(`http://127.0.0.1:${port}/app.js`);
     assert.equal(assetResponse.status, 200);
     assert.match(assetResponse.headers.get("content-type"), /application\/javascript/);
+
+    const updateResponse = await fetch(`http://127.0.0.1:${port}/api/source`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        codexHome: alternateCodexHome,
+      }),
+    });
+    assert.equal(updateResponse.status, 200);
+
+    const updatedSnapshot = await (await fetch(`http://127.0.0.1:${port}/api/snapshot`)).json();
+    assert.equal(updatedSnapshot.sources.codexHome, alternateCodexHome);
+    assert.equal(updatedSnapshot.overview.totalTokens, 9900);
 
     const streamResponse = await fetch(`http://127.0.0.1:${port}/api/stream`);
     assert.equal(streamResponse.status, 200);

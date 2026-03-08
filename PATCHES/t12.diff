@@ -1,0 +1,300 @@
+diff --git a/METRICS.md b/METRICS.md
+index 2f13c00..78cf41b 100644
+--- a/METRICS.md
++++ b/METRICS.md
+@@ -1,6 +1,6 @@
+ # Metrics
+ 
+-Last updated: 2026-03-08 18:05 Asia/Shanghai
++Last updated: 2026-03-08 19:26 Asia/Shanghai
+ 
+ | Round | Metric | Value | Notes |
+ | --- | --- | --- | --- |
+@@ -20,3 +20,15 @@ Last updated: 2026-03-08 18:05 Asia/Shanghai
+ | 4 | GitHub bootstrap audit | parent repo detected | `git rev-parse --show-toplevel` returned `/Users/helena` before isolation |
+ | 4 | Git repo isolation | pass | `git init` created `/Users/helena/Cursor/codex_token/.git` and top-level now resolves locally |
+ | 4 | Automated tests | 3 passing | `npm test` on 2026-03-08 18:04 Asia/Shanghai during Git bootstrap |
++| 5 | Automated tests | 7 passing | `npm test` on 2026-03-08 18:37 Asia/Shanghai after dashboard refinement |
++| 5 | Browser smoke test | pass | Playwright verified plan badge, pricing merge, tab switch, hover tooltip, and `GPT-5.4` label on 2026-03-08 |
++| 5 | Runtime source switching | enabled | `POST /api/source` updates `codexHome` without restarting the server |
++| 5 | Pricing table grouping | enabled | identical unit-price models collapse into one row |
++| 6 | Raw local rate-limit snapshot | 4% used / 4% used | latest local `rate_limits` event inspected from `~/.codex` on 2026-03-08 18:45 Asia/Shanghai |
++| 6 | Automated tests | 8 passing | `npm test` on 2026-03-08 18:48 Asia/Shanghai after rate-limit selection fix |
++| 7 | Automated tests | 9 passing | `npm test` on 2026-03-08 19:11 Asia/Shanghai after billing UX redesign |
++| 7 | Browser smoke test | pass | verified natural-month toggle, draggable range sliders, billing table headers, and deduped `GPT-5.4` pricing row on `http://127.0.0.1:4326` |
++| 7 | Billing scope switch | enabled | billing tab supports `累计` and `自然月` totals for fee and token |
++| 8 | Automated tests | 10 passing | `npm test` on 2026-03-08 19:24 Asia/Shanghai after async warmup change |
++| 8 | Cold-start HTML latency | 0.09s | measured on `http://127.0.0.1:4327/` |
++| 8 | Cold-start snapshot latency | 0.006s | first `GET /api/snapshot` on `http://127.0.0.1:4327` after restart |
+diff --git a/PLAN.md b/PLAN.md
+index 552edf9..f3d3011 100644
+--- a/PLAN.md
++++ b/PLAN.md
+@@ -1,6 +1,6 @@
+ # Codex Usage Dashboard Plan
+ 
+-Last updated: 2026-03-08 18:03 Asia/Shanghai
++Last updated: 2026-03-08 19:26 Asia/Shanghai
+ 
+ ## Goal
+ 
+@@ -12,7 +12,11 @@ Build a standalone local web dashboard in this workspace that reads `~/.codex` u
+ 2. Build a Node.js backend that aggregates SQLite + session JSONL data. Completed.
+ 3. Build a local frontend dashboard with live refresh. Completed.
+ 4. Verify tests, startup flow, and browser behavior. Completed.
+-5. Prepare the workspace as an independent Git repository with GitHub publication prerequisites. In progress.
++5. Prepare the workspace as an independent Git repository with GitHub publication prerequisites. Completed.
++6. Refine dashboard interaction model: grouped pricing, source picker, combined billing chart, and reset progress cues. Completed.
++7. Correct live rate-limit selection so windows reflect the newest status snapshot. Completed.
++8. Rework billing analytics UX with scope switching, a brushable time range, and a real ledger table. Completed.
++9. Remove cold-start blocking from the first snapshot request. Completed.
+ 
+ ## Architecture
+ 
+@@ -40,6 +44,8 @@ Build a standalone local web dashboard in this workspace that reads `~/.codex` u
+ 
+ ## Current Phase
+ 
+-- Isolate this workspace from the accidental parent Git repository rooted at `/Users/helena/.git`.
+-- Add missing repository metadata needed for GitHub publication: `.gitignore` and `README.md`.
+-- Initialize a local repository, create the first commit, and stop at the GitHub authentication boundary if credentials are unavailable.
++- Dashboard refinement round is complete and verified.
++- The app now supports grouped pricing rows, top-level plan display, reset-progress feedback, tabbed recent sessions vs billing, hoverable combined chart, and runtime source-path switching.
++- Live rate-limit selection now keys off `rateLimitsAt`, avoiding stale 5-hour / 7-day values from later non-rate-limit token events.
++- Billing tab redesign is complete: dual-axis chart scaffolding, cumulative vs. natural-month switching, drag-adjustable time range, and a headed ledger table.
++- Snapshot warmup now runs off the request path so the dashboard opens immediately and then continues hydrating in the background.
+diff --git a/RISKS.md b/RISKS.md
+index da73fd3..988f009 100644
+--- a/RISKS.md
++++ b/RISKS.md
+@@ -1,6 +1,6 @@
+ # Risks
+ 
+-Last updated: 2026-03-08 18:03 Asia/Shanghai
++Last updated: 2026-03-08 19:26 Asia/Shanghai
+ 
+ | ID | Risk | Trigger | Mitigation | Rollback |
+ | --- | --- | --- | --- | --- |
+@@ -8,3 +8,7 @@ Last updated: 2026-03-08 18:03 Asia/Shanghai
+ | R2 | Session JSONL parsing is expensive | many archived sessions or large files | parse recent files first, cache results, expose refresh interval | disable live details and keep SQLite-only view |
+ | R3 | File watching misses updates | OS-specific watcher behavior | use timed refresh plus SSE | revert to client polling only |
+ | R4 | Project is currently inside a parent Git repository rooted at `/Users/helena` | running Git from this workspace shows home-directory files | initialize a nested repo in this workspace before any add/commit/push | do not run `git add .` against the parent repo |
++| R5 | User-selected path is invalid or not a Codex directory | UI submits a folder without `state_5.sqlite` | validate path server-side and return a Chinese error message without changing the current source | keep previous `codexHome` and ask user to reselect |
++| R6 | Latest thread activity can mask older quota snapshots | a thread gets newer token events after an older `rate_limits` event | compare quota freshness using `rateLimitsAt` instead of thread `latestTimestamp` | fall back to the newest explicit rate-limit event only |
++| R7 | Ledger range controls can become confusing when the selected scope has few days | switching from cumulative to month shrinks the available time window | reset/clamp slider bounds per scope and show explicit selected date labels | revert to fixed presets only if manual range controls prove too error-prone |
++| R8 | First background full refresh still does heavy synchronous log parsing | large local session history | keep the heavy work off the request path and always return cached/placeholder snapshots first | move full parsing to a worker or persisted cache if history grows further |
+diff --git a/TASKS.md b/TASKS.md
+index ec5ac61..f232b46 100644
+--- a/TASKS.md
++++ b/TASKS.md
+@@ -1,6 +1,6 @@
+ # Tasks
+ 
+-Last updated: 2026-03-08 18:05 Asia/Shanghai
++Last updated: 2026-03-08 19:26 Asia/Shanghai
+ 
+ | ID | Priority | Est | Slot | Status | Task | Input | Output | Validation | DoD |
+ | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+@@ -12,3 +12,7 @@ Last updated: 2026-03-08 18:05 Asia/Shanghai
+ | T6 | P0 | 15m | 1 | DONE | Final verification and evidence files | full app | results/metrics | `npm test`, startup smoke | evidence recorded |
+ | T7 | P0 | 20m | 1 | DONE | Add model pricing, cost estimate, Chinese UI, and M-unit formatting | session model fields + OpenAI pricing | enriched dashboard | `npm test` and browser smoke | model/cost/limits visible and layout stable |
+ | T8 | P0 | 15m | 1 | DONE | Bootstrap standalone Git repo and GitHub publication metadata | current workspace | independent repo, README, ignore rules, initial commit | `npm test`, `git status --short --branch` | project is safe to push without leaking parent home directory files |
++| T9 | P0 | 20m | 1 | DONE | Refine dashboard pricing, tabs, combined chart, plan badge, reset progress, and selectable Codex home | current dashboard + live snapshot service | updated UI, mutable source endpoint, regression tests, checkpoint docs | `npm test` and browser smoke | requested UX and data-source behaviors are implemented and verified |
++| T10 | P0 | 10m | 1 | DONE | Fix stale rate-limit snapshot selection | current live snapshot selection logic | rate limit chooser uses actual rate-limit timestamps | `npm test` and local snapshot inspection | dashboard window percentages match latest local status event |
++| T11 | P0 | 20m | 1 | DONE | Redesign billing analytics view with scope toggle, range brush, and table headers | current billing tab UI | clearer chart, selectable date range, cumulative/month switch, tabular ledger | `npm test` and browser smoke | billing tab is easier to read and supports fast time-range filtering |
++| T12 | P0 | 15m | 1 | DONE | Remove first-request snapshot blocking | current live snapshot warmup path | async warmup, cached first response, regression tests | `npm test` and latency spot-check | dashboard HTML and first snapshot return quickly while full data continues loading in background |
+diff --git a/server/app.js b/server/app.js
+index d7f4295..c05f4d3 100644
+--- a/server/app.js
++++ b/server/app.js
+@@ -3,6 +3,7 @@ const path = require("node:path");
+ const http = require("node:http");
+ 
+ const { createLiveSnapshotService } = require("./lib/liveSnapshotService");
++const { resolveCodexHome, resolveSelectableCodexHome } = require("./lib/codexPaths");
+ 
+ const MIME_TYPES = {
+   ".html": "text/html; charset=utf-8",
+@@ -39,9 +40,28 @@ function serveStaticFile(response, filePath) {
+   response.end(fs.readFileSync(filePath));
+ }
+ 
++function readJsonBody(request) {
++  return new Promise((resolve, reject) => {
++    let body = "";
++
++    request.on("data", (chunk) => {
++      body += chunk;
++    });
++    request.on("end", () => {
++      try {
++        resolve(body ? JSON.parse(body) : {});
++      } catch (error) {
++        reject(new Error("请求体不是有效的 JSON。"));
++      }
++    });
++    request.on("error", reject);
++  });
++}
++
+ function createAppServer(options = {}) {
+   const publicDir = options.publicDir || path.join(process.cwd(), "public");
+   const liveSnapshotService = createLiveSnapshotService(options);
++  liveSnapshotService.primeSnapshots();
+ 
+   return http.createServer(async (request, response) => {
+     const url = new URL(request.url, "http://127.0.0.1");
+@@ -77,6 +97,20 @@ function createAppServer(options = {}) {
+       return;
+     }
+ 
++    if (request.method === "POST" && url.pathname === "/api/source") {
++      try {
++        const payload = await readJsonBody(request);
++        const nextCodexHome = payload?.codexHome
++          ? resolveSelectableCodexHome(payload.codexHome)
++          : resolveCodexHome();
++        const snapshot = await liveSnapshotService.setCodexHome(nextCodexHome);
++        sendJson(response, 200, snapshot);
++      } catch (error) {
++        sendJson(response, 400, { error: error.message });
++      }
++      return;
++    }
++
+     if (request.method === "GET" && (url.pathname === "/" || url.pathname === "/index.html")) {
+       serveStaticFile(response, path.join(publicDir, "index.html"));
+       return;
+diff --git a/server/lib/liveSnapshotService.js b/server/lib/liveSnapshotService.js
+index 277d6d7..4e0eaa2 100644
+--- a/server/lib/liveSnapshotService.js
++++ b/server/lib/liveSnapshotService.js
+@@ -2,17 +2,20 @@ const { loadSnapshot } = require("./usageRepository");
+ 
+ function createLiveSnapshotService(options = {}) {
+   const listeners = new Set();
+-  const refreshIntervalMs = options.refreshIntervalMs || 5000;
++  const runtimeOptions = { ...options };
++  const loadSnapshotFn = runtimeOptions.loadSnapshotFn || loadSnapshot;
++  const refreshIntervalMs = runtimeOptions.refreshIntervalMs || 5000;
+   let timer = null;
+   let latestSnapshotPromise = null;
+-  let latestSnapshot = null;
+-  let fullRefreshStarted = false;
++  let latestSnapshot = createPlaceholderSnapshot();
++  let warmupScheduled = false;
++  let fullRefreshScheduled = false;
+ 
+   function createPlaceholderSnapshot() {
+     return {
+       generatedAt: new Date().toISOString(),
+       sources: {
+-        codexHome: options.codexHome || process.env.CODEX_HOME || null,
++        codexHome: runtimeOptions.codexHome || process.env.CODEX_HOME || null,
+       },
+       overview: {
+         totalThreads: 0,
+@@ -36,43 +39,64 @@ function createLiveSnapshotService(options = {}) {
+     };
+   }
+ 
++  function emitSnapshot(snapshot) {
++    for (const listener of listeners) {
++      listener(snapshot);
++    }
++  }
++
+   async function loadFastSnapshot() {
+-    const snapshot = await loadSnapshot({
+-      ...options,
++    const snapshot = await loadSnapshotFn({
++      ...runtimeOptions,
+       skipSessionParsing: true,
+     });
+     latestSnapshot = { ...snapshot, loading: true };
+-    return snapshot;
++    emitSnapshot(latestSnapshot);
++    return latestSnapshot;
+   }
+ 
+   async function refresh() {
+-    latestSnapshotPromise = loadSnapshot({
+-      ...options,
+-      recentSessionFileLimit: options.recentSessionFileLimit || 40,
+-      ledgerFileLimit: options.ledgerFileLimit || 217,
++    latestSnapshotPromise = loadSnapshotFn({
++      ...runtimeOptions,
++      recentSessionFileLimit: runtimeOptions.recentSessionFileLimit || 40,
++      ledgerFileLimit: runtimeOptions.ledgerFileLimit || 217,
+     });
+     const snapshot = await latestSnapshotPromise;
+     latestSnapshot = { ...snapshot, loading: false };
++    emitSnapshot(latestSnapshot);
++    return latestSnapshot;
++  }
+ 
+-    for (const listener of listeners) {
+-      listener(latestSnapshot);
++  function scheduleBackgroundRefresh() {
++    if (fullRefreshScheduled) {
++      return;
+     }
+ 
+-    return latestSnapshot;
++    fullRefreshScheduled = true;
++    setTimeout(() => {
++      refresh().catch(() => {});
++    }, 0);
+   }
+ 
+   function primeSnapshots() {
+-    if (!latestSnapshotPromise) {
+-      latestSnapshotPromise = loadFastSnapshot().catch(() => {
+-        latestSnapshot = createPlaceholderSnapshot();
+-        return latestSnapshot;
+-      });
++    if (warmupScheduled) {
++      return;
+     }
+ 
+-    if (!fullRefreshStarted) {
+-      fullRefreshStarted = true;
+-      refresh().catch(() => {});
+-    }
++    warmupScheduled = true;
++    latestSnapshot = latestSnapshot || createPlaceholderSnapshot();
++
++    setTimeout(async () => {
++      try {
++        latestSnapshotPromise = loadFastSnapshot();
++        await latestSnapshotPromise;
++      } catch {
++        latestSnapshot = createPlaceholderSnapshot();
++      } finally {
++        latestSnapshotPromise = null;
++        scheduleBackgroundRefresh();
++      }
++    }, 0);
+   }
+ 
+   function subscribe(listener) {
+@@ -98,8 +122,19 @@ function createLiveSnapshotService(options = {}) {
+     };
+   }
+ 
++  async function setCodexHome(codexHome) {
++    runtimeOptions.codexHome = codexHome;
++    latestSnapshotPromise = null;
++    latestSnapshot = createPlaceholderSnapshot();
++    warmupScheduled = false;
++    fullRefreshScheduled = false;
++    primeSnapshots();
++    return refresh();
++  }
++
+   return {
+     refresh,
++    setCodexHome,
+     subscribe,
+     primeSnapshots,
+     getCurrentSnapshot: () => {
