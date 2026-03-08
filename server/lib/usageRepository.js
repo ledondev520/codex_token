@@ -366,7 +366,9 @@ function buildDailyLedger(sessionsDir, archivedSessionsDir, options = {}) {
   const files = [
     ...listJsonlFiles(sessionsDir),
     ...listJsonlFiles(archivedSessionsDir),
-  ].sort((left, right) => left.mtimeMs - right.mtimeMs);
+  ]
+    .sort((left, right) => left.mtimeMs - right.mtimeMs)
+    .slice(-(options.ledgerFileLimit || Number.MAX_SAFE_INTEGER));
 
   const byDay = new Map();
   const usedModels = new Set();
@@ -453,7 +455,10 @@ async function loadSnapshot(options = {}) {
     paths.archivedSessionsDir,
     options.recentSessionFileLimit || 40
   );
-  const dailyLedger = buildDailyLedger(paths.sessionsDir, paths.archivedSessionsDir, { timeZone });
+  const dailyLedger = buildDailyLedger(paths.sessionsDir, paths.archivedSessionsDir, {
+    timeZone,
+    ledgerFileLimit: options.ledgerFileLimit,
+  });
   const latestLiveEvent = getLatestLiveEvent(recentSessionMap);
   const overview = getThreadSummary(paths.stateDbPath);
   overview.totalEstimatedCost = dailyLedger.rows.reduce((sum, item) => sum + item.totalUsd, 0);
