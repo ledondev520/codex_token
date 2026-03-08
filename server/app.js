@@ -48,7 +48,7 @@ function createAppServer(options = {}) {
 
     if (request.method === "GET" && url.pathname === "/api/snapshot") {
       try {
-        const snapshot = await liveSnapshotService.getLatestSnapshot();
+        const snapshot = liveSnapshotService.getCurrentSnapshot();
         sendJson(response, 200, snapshot);
       } catch (error) {
         sendJson(response, 500, { error: error.message });
@@ -70,12 +70,7 @@ function createAppServer(options = {}) {
         response.write(`data: ${JSON.stringify(snapshot)}\n\n`);
       };
 
-      try {
-        writeSnapshot(await liveSnapshotService.getLatestSnapshot());
-      } catch (error) {
-        response.write(`event: error\n`);
-        response.write(`data: ${JSON.stringify({ error: error.message })}\n\n`);
-      }
+      writeSnapshot(liveSnapshotService.getCurrentSnapshot());
 
       const unsubscribe = liveSnapshotService.subscribe(writeSnapshot);
       request.on("close", unsubscribe);

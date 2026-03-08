@@ -8,13 +8,40 @@ function createLiveSnapshotService(options = {}) {
   let latestSnapshot = null;
   let fullRefreshStarted = false;
 
+  function createPlaceholderSnapshot() {
+    return {
+      generatedAt: new Date().toISOString(),
+      sources: {
+        codexHome: options.codexHome || process.env.CODEX_HOME || null,
+      },
+      overview: {
+        totalThreads: 0,
+        totalTokens: 0,
+        latestUpdatedAt: null,
+        totalEstimatedCost: 0,
+      },
+      dailyLedger: [],
+      pricingCatalog: [],
+      live: {
+        currentSession: null,
+        rateLimits: null,
+        latestEventAt: null,
+        latestEventFile: null,
+        latestRateLimitAt: null,
+        latestRateLimitFile: null,
+      },
+      recentThreads: [],
+      dailyUsage: [],
+      loading: true,
+    };
+  }
+
   async function loadFastSnapshot() {
     const snapshot = await loadSnapshot({
       ...options,
-      recentSessionFileLimit: options.recentSessionFileLimit || 12,
-      ledgerFileLimit: options.ledgerFileLimit || 36,
+      skipSessionParsing: true,
     });
-    latestSnapshot = snapshot;
+    latestSnapshot = { ...snapshot, loading: true };
     return snapshot;
   }
 
@@ -25,17 +52,36 @@ function createLiveSnapshotService(options = {}) {
       ledgerFileLimit: options.ledgerFileLimit || 217,
     });
     const snapshot = await latestSnapshotPromise;
-    latestSnapshot = snapshot;
+    latestSnapshot = { ...snapshot, loading: false };
 
     for (const listener of listeners) {
-      listener(snapshot);
+      listener(latestSnapshot);
     }
 
-    return snapshot;
+    return latestSnapshot;
+  }
+
+  function primeSnapshots() {
+    if (!latestSnapshotPromise) {
+      latestSnapshotPromise = loadFastSnapshot().catch(() => {
+        latestSnapshot = createPlaceholderSnapshot();
+        return latestSnapshot;
+      });
+    }
+
+    if (!fullRefreshStarted) {
+      fullRefreshStarted = true;
+      refresh().catch(() => {});
+    }
   }
 
   function subscribe(listener) {
     listeners.add(listener);
+
+    if (latestSnapshot) {
+      listener(latestSnapshot);
+    }
+    primeSnapshots();
 
     if (!timer) {
       timer = setInterval(() => {
@@ -55,19 +101,10 @@ function createLiveSnapshotService(options = {}) {
   return {
     refresh,
     subscribe,
-    getLatestSnapshot: async () => {
-      if (!latestSnapshotPromise) {
-        latestSnapshotPromise = loadFastSnapshot();
-      }
-
-      const snapshot = await latestSnapshotPromise;
-
-      if (!fullRefreshStarted) {
-        fullRefreshStarted = true;
-        refresh().catch(() => {});
-      }
-
-      return latestSnapshot || snapshot;
+    primeSnapshots,
+    getCurrentSnapshot: () => {
+      primeSnapshots();
+      return latestSnapshot || createPlaceholderSnapshot();
     },
   };
 }

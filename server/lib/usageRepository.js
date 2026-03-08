@@ -450,17 +450,21 @@ function getLatestLiveEvent(sessionMap) {
 async function loadSnapshot(options = {}) {
   const paths = resolveCodexPaths(options.codexHome);
   const timeZone = options.timeZone || Intl.DateTimeFormat().resolvedOptions().timeZone;
-  const recentSessionMap = buildRecentSessionMap(
-    paths.sessionsDir,
-    paths.archivedSessionsDir,
-    options.recentSessionFileLimit || 40
-  );
-  const dailyLedger = buildDailyLedger(paths.sessionsDir, paths.archivedSessionsDir, {
-    timeZone,
-    ledgerFileLimit: options.ledgerFileLimit,
-  });
-  const latestLiveEvent = getLatestLiveEvent(recentSessionMap);
   const overview = getThreadSummary(paths.stateDbPath);
+  const recentSessionMap = options.skipSessionParsing
+    ? new Map()
+    : buildRecentSessionMap(
+        paths.sessionsDir,
+        paths.archivedSessionsDir,
+        options.recentSessionFileLimit || 40
+      );
+  const dailyLedger = options.skipSessionParsing
+    ? { rows: [], usedModels: [] }
+    : buildDailyLedger(paths.sessionsDir, paths.archivedSessionsDir, {
+        timeZone,
+        ledgerFileLimit: options.ledgerFileLimit,
+      });
+  const latestLiveEvent = getLatestLiveEvent(recentSessionMap);
   overview.totalEstimatedCost = dailyLedger.rows.reduce((sum, item) => sum + item.totalUsd, 0);
   const pricingCatalog = dailyLedger.usedModels
     .map((modelName) => {
