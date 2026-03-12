@@ -1,0 +1,3628 @@
+diff --git a/METRICS.md b/METRICS.md
+index e7ff213..88cf1d2 100644
+--- a/METRICS.md
++++ b/METRICS.md
+@@ -1,6 +1,6 @@
+ # Metrics
+ 
+-Last updated: 2026-03-08 21:43 Asia/Shanghai
++Last updated: 2026-03-12 21:19 Asia/Shanghai
+ 
+ | Round | Metric | Value | Notes |
+ | --- | --- | --- | --- |
+@@ -38,3 +38,16 @@ Last updated: 2026-03-08 21:43 Asia/Shanghai
+ | 9 | HTTP smoke test | pass | `GET /api/snapshot` on `http://127.0.0.1:4328` returned `openclaw.source = local` and a top model |
+ | 10 | Launchd background service | active | `launchctl print gui/501/com.helena.codex-usage-dashboard` shows a running LaunchAgent on 2026-03-08 21:41 Asia/Shanghai |
+ | 10 | Fixed port 4329 | pass | `GET /` and `GET /api/snapshot` both succeeded on `http://127.0.0.1:4329` after bootstrap |
++| 11 | VPS reverse proxy | active | nginx is listening on `0.0.0.0:18080` on 2026-03-12 00:02 Asia/Shanghai |
++| 11 | Reverse tunnel reachability | pass | `curl http://127.0.0.1:14329/` succeeded on the VPS through the SSH reverse tunnel |
++| 11 | Public mobile preview | pass | `curl -u <preview-user>:<preview-pass> http://23.81.118.51:18080/` returned the dashboard HTML on 2026-03-12 00:02 Asia/Shanghai |
++| 12 | Public mobile preview without auth | pass | `curl http://23.81.118.51:18080/` returned the dashboard HTML on 2026-03-12 00:06 Asia/Shanghai |
++| 13 | Automated tests | 23 passing | `npm test` on 2026-03-12 20:38 Asia/Shanghai after the shadcn-style layout refactor |
++| 13 | Browser smoke test | pass | Playwright snapshot on `http://127.0.0.1:4318/` confirmed the new shell, stats, quota cards, sessions table, and OpenClaw side panel render together |
++| 13 | Layout refactor | complete | static HTML/CSS now uses topbar + main stack + side panel while preserving existing render IDs and tab/filter hooks |
++| 14 | Automated tests | 26 passing | `npm test` on 2026-03-12 20:57 Asia/Shanghai after source classification, prompt summaries, and shadcn-semantics cleanup |
++| 14 | Browser smoke test | pass | Playwright verified the new `来源` column/filter, `Codex 本地` vs `OpenClaw / OAuth` badges, and prompt summary dialog on `http://127.0.0.1:4329/` |
++| 14 | Token source split | enabled | session rows and the live-current card now expose local-Codex vs OpenClaw/OAuth usage labels based on local thread metadata |
++| 15 | Automated tests | 27 passing | `npm test` on 2026-03-12 21:19 Asia/Shanghai after mobile density, user-turn extraction, fee-table cleanup, and live refresh race fix |
++| 15 | Mobile source tabs | enabled | Playwright verified a mobile-width `Codex 本地` / `OpenClaw / OAuth` switcher on `http://127.0.0.1:4329/` |
++| 15 | User-turn detail view | enabled | session detail now shows each captured local user turn from `event_msg.user_message`, not just the latest prompt summary |
+diff --git a/PLAN.md b/PLAN.md
+index a1086ce..f6ffe7f 100644
+--- a/PLAN.md
++++ b/PLAN.md
+@@ -1,6 +1,6 @@
+ # Codex Usage Dashboard Plan
+ 
+-Last updated: 2026-03-08 22:00 Asia/Shanghai
++Last updated: 2026-03-12 21:19 Asia/Shanghai
+ 
+ ## Goal
+ 
+@@ -21,6 +21,11 @@ Build a standalone local web dashboard in this workspace that reads `~/.codex` u
+ 11. Extend the dashboard with OpenClaw ChatGPT/Codex usage sourced from CodexBar local cost output. Completed.
+ 12. Install a fixed-port local background service on 4329. Completed.
+ 13. Mark stale rate-limit snapshots when reset time has passed. Completed.
++14. Expose the local dashboard through a VPS-backed reverse tunnel for phone access. Completed.
++15. Remove Basic Auth from the temporary VPS preview entrypoint at user request. Completed.
++16. Rework the dashboard layout toward a shadcn/ui-style information architecture without changing data bindings. Completed.
++17. Separate Codex-local usage from OpenClaw/OAuth-driven usage in the UI, reduce prompt verbosity, and tighten shadcn/ui semantics. Completed.
++18. Optimize mobile density, clean residual copy, convert odd model-fee blocks into table semantics, and expose per-turn user messages in session detail. Completed.
+ 
+ ## Architecture
+ 
+@@ -48,6 +53,8 @@ Build a standalone local web dashboard in this workspace that reads `~/.codex` u
+ - Fall back to the most recent non-null rate-limit snapshot when the newest session event omits quota data.
+ - Merge per-thread token/model/limit fields by timestamp so newer partial files do not wipe older non-null snapshots.
+ - Cache OpenClaw usage reads and degrade to `null` when `codexbar` is unavailable so the rest of the dashboard stays live.
++- Keep the dashboard bound to loopback on the Mac and expose phone access through a reverse SSH tunnel terminated by the VPS reverse proxy.
++- Keep a clear record when public-access protections are relaxed so the exposure level is obvious on resume.
+ 
+ ## Current Phase
+ 
+@@ -60,3 +67,9 @@ Build a standalone local web dashboard in this workspace that reads `~/.codex` u
+ - OpenClaw / ChatGPT usage is now integrated as a separate panel backed by `codexbar cost`, filtered to GPT / ChatGPT models, with top-model and recent-daily summaries.
+ - The dashboard is now managed by `launchctl` so `127.0.0.1:4329` stays stable without relying on this chat session.
+ - Rate-limit cards are being clarified so an expired local snapshot is shown as stale rather than looking like a failed reset.
++- A VPS preview path is now maintained separately from the app process so mobile access can be enabled without moving local Codex data onto the server.
++- The VPS preview endpoint is temporarily open without Basic Auth at the user's request, which trades convenience for substantially weaker privacy.
++- The frontend layout now uses a more shadcn/ui-like shell: top status bar, main content stack, right-side supporting panel, neutral surfaces, and preserved DOM IDs for the existing JS render pipeline.
++- Session rows are now classified as `Codex 本地` vs `OpenClaw / OAuth` using local thread metadata, the sessions table exposes a source filter, and long prompt/title text is summarized before rendering while the full prompt remains available on demand.
++- Mobile now switches between `Codex 本地` and `OpenClaw / OAuth` views through source tabs, the OpenClaw model-fee area uses a real table, and session detail now lists each captured user turn from local event logs.
++- The live snapshot service now guards against stale background refreshes overwriting a newly selected `codexHome`.
+diff --git a/RISKS.md b/RISKS.md
+index 87d43b6..31d5943 100644
+--- a/RISKS.md
++++ b/RISKS.md
+@@ -1,6 +1,6 @@
+ # Risks
+ 
+-Last updated: 2026-03-08 21:43 Asia/Shanghai
++Last updated: 2026-03-12 21:19 Asia/Shanghai
+ 
+ | ID | Risk | Trigger | Mitigation | Rollback |
+ | --- | --- | --- | --- | --- |
+@@ -13,3 +13,9 @@ Last updated: 2026-03-08 21:43 Asia/Shanghai
+ | R7 | Ledger range controls can become confusing when the selected scope has few days | switching from cumulative to month shrinks the available time window | reset/clamp slider bounds per scope and show explicit selected date labels | revert to fixed presets only if manual range controls prove too error-prone |
+ | R8 | First background full refresh still does heavy synchronous log parsing | large local session history | keep the heavy work off the request path and always return cached/placeholder snapshots first | move full parsing to a worker or persisted cache if history grows further |
+ | R9 | LaunchAgent reload may fail if a stray manual process already holds port 4329 | previous ad-hoc `node server/index.js` still listening | kill the existing listener before `launchctl bootstrap` and verify with `launchctl print` + `lsof` | boot out the LaunchAgent and restart manually |
++| R10 | Public preview traffic is HTTP-only when using a raw VPS IP | user opens the dashboard over `http://<vps-ip>:18080` on mobile networks | treat the VPS preview as temporary and move to a domain + HTTPS when available | disable the nginx site on `18080` and unload the tunnel launch agent |
++| R11 | Reverse tunnel can drop when the Mac sleeps or changes network | mobile preview stops updating or returns `502` from the VPS | keep the tunnel under `launchd` with SSH keepalives so it auto-restarts after disconnects | manually relaunch the tunnel or unload the preview agent if it loops |
++| R12 | Public preview is now completely unauthenticated | anyone who finds `23.81.118.51:18080` can read dashboard data | treat this as short-lived only; if privacy matters, restore auth or move to HTTPS with an allowlist or VPN | re-add Basic Auth to nginx or shut down the preview endpoint |
++| R13 | The denser shadcn-style layout still contains wide data tables on small screens | mobile viewport narrower than the session/billing table minimum width | keep responsive stacking for panels and preserve horizontal scroll wrappers around tables | collapse columns or move session detail into cards if mobile browsing becomes a top priority |
++| R14 | OpenClaw/OAuth source classification currently uses local thread metadata heuristics | future OpenClaw runs stop using `~/.openclaw` workspaces or write different `cwd` patterns | keep the label explicit as a heuristic and update the classifier if a stronger local signal appears in thread/session metadata | fall back to an “未知入口” label instead of pretending the split is exact |
++| R15 | Per-turn user messages currently come only from local `event_msg.user_message` records | a future Codex log format omits those events or moves user turns elsewhere | prefer `event_msg.user_message` to avoid duplicated boilerplate, and extend extraction if a new stable field appears | fall back to latest prompt summary only instead of showing duplicated or polluted turn history |
+diff --git a/TASKS.md b/TASKS.md
+index 0636ed5..4b6f1e6 100644
+--- a/TASKS.md
++++ b/TASKS.md
+@@ -1,6 +1,6 @@
+ # Tasks
+ 
+-Last updated: 2026-03-08 22:00 Asia/Shanghai
++Last updated: 2026-03-12 21:19 Asia/Shanghai
+ 
+ | ID | Priority | Est | Slot | Status | Task | Input | Output | Validation | DoD |
+ | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+@@ -21,3 +21,8 @@ Last updated: 2026-03-08 22:00 Asia/Shanghai
+ | T15 | P0 | 15m | 1 | DONE | Install fixed-port background service on 4329 | current app + local macOS launchd | repo-local launch script, launchd plist, loaded user job on 4329 | `launchctl print`, `curl http://127.0.0.1:4329/` | dashboard survives this chat session and stays reachable on 4329 |
+ | T16 | P0 | 20m | 1 | DONE | Move full snapshot refresh off the main thread | current background refresh path | child-process snapshot loader, responsive HTTP loop, regression tests | `npm test` and latency spot-check on 4329 | static and snapshot endpoints stay fast even during full refresh |
+ | T17 | P0 | 10m | 1 | DONE | Mark stale limit snapshots after reset time | current quota card rendering | stale reset hint, non-misleading progress state, regression tests | `npm test` and browser/API spot-check | expired local quota snapshots are labeled as stale instead of looking like a failed reset |
++| T18 | P0 | 20m | 1 | DONE | Expose the local dashboard through a VPS preview tunnel | running local dashboard + reachable VPS | VPS reverse proxy, SSH key auth, launchd tunnel agent, access docs, evidence files | local `curl`, remote `curl`, `launchctl print` | phone-access path reaches the Mac-hosted dashboard without copying local Codex data to the VPS |
++| T19 | P0 | 10m | 1 | DONE | Remove Basic Auth from the temporary VPS preview entrypoint | existing VPS reverse proxy on `18080` | unauthenticated nginx site, updated docs, evidence files | public `curl`, `npm test` | mobile preview loads directly from the raw VPS IP without username/password prompts |
++| T20 | P0 | 20m | 1 | DONE | Refactor dashboard layout to a shadcn/ui-style shell | current static dashboard frontend | new app shell, neutral panel system, regression test for layout markers, checkpoint docs | `npm test` and browser smoke on `http://127.0.0.1:4318/` | layout is visibly restructured without breaking existing IDs, tabs, filters, or snapshot rendering |
++| T21 | P0 | 20m | 1 | DONE | Distinguish Codex-local vs OpenClaw/OAuth usage, reduce prompt verbosity, and tighten shadcn semantics | current dashboard frontend + local thread metadata | source classification on sessions/live card, source filter, prompt summary/full view, flatter shadcn-style card semantics, regression tests, checkpoint docs | `npm test` and Playwright smoke on `http://127.0.0.1:4329/` | users can tell which token usage came from local Codex vs OpenClaw/OAuth, long prompts no longer blow up the UI, and the layout is closer to actual shadcn/ui component structure |
++| T22 | P0 | 20m | 1 | DONE | Fix mobile density, clean residual copy, repair model-fee tables, show per-turn user messages, and harden source switching | current dashboard UI + live snapshot service | mobile source tabs, denser mobile cards, table-based OpenClaw fee summary, session user-turn list, stale-refresh guard, regression tests, checkpoint docs | `npm test` and Playwright smoke on `http://127.0.0.1:4329/` | phone view is denser and easier to browse, no leftover odd helper copy remains, model fees read as tables, session detail shows local user turns, and switching data directories no longer races back to the old source |
+diff --git a/public/app.js b/public/app.js
+index e1bc517..962c468 100644
+--- a/public/app.js
++++ b/public/app.js
+@@ -8,6 +8,7 @@
+       title: "",
+       model: "",
+       createdDate: "",
++      origin: "",
+     },
+     snapshot: null,
+   };
+@@ -93,6 +94,26 @@
+     return String(modelName);
+   }
+ 
++  function statusBadgeClass(statusLabel) {
++    if (statusLabel === "进行中") {
++      return "status-running";
++    }
++
++    if (statusLabel === "等待回答") {
++      return "status-waiting";
++    }
++
++    if (statusLabel === "已完结") {
++      return "status-done";
++    }
++
++    if (statusLabel === "已中断") {
++      return "status-aborted";
++    }
++
++    return "";
++  }
++
+   function formatUsageSource(value) {
+     if (!value) {
+       return "未知来源";
+@@ -122,6 +143,27 @@
+       .replaceAll("'", "&#39;");
+   }
+ 
++  function normalizeInlineText(value) {
++    return String(value || "").replace(/\s+/g, " ").trim();
++  }
++
++  function summarizePromptText(value, maxLength = 220) {
++    const normalized = normalizeInlineText(value);
++    if (!normalized) {
++      return "";
++    }
++
++    if (normalized.length <= maxLength) {
++      return normalized;
++    }
++
++    return `${normalized.slice(0, Math.max(0, maxLength - 3)).trimEnd()}...`;
++  }
++
++  function usageOriginBadgeClass(origin) {
++    return origin === "openclaw-oauth" ? "origin-openclaw" : "origin-codex";
++  }
++
+   function calculateResetProgress({ generatedAt, resetsAt, windowMinutes }) {
+     if (!generatedAt || !resetsAt || !windowMinutes) {
+       return {
+@@ -150,6 +192,10 @@
+     );
+   }
+ 
++  function shouldCloseDialogFromBackdropClick(dialog, eventTarget) {
++    return Boolean(dialog) && eventTarget === dialog;
++  }
++
+   function isRateLimitSnapshotStale({ generatedAt, latestRateLimitAt, resetsAt }) {
+     if (!generatedAt || !latestRateLimitAt || !resetsAt) {
+       return false;
+@@ -218,6 +264,7 @@
+     const titleQuery = String(filters.title || "").trim().toLowerCase();
+     const modelQuery = String(filters.model || "").trim().toLowerCase();
+     const createdDate = String(filters.createdDate || "").trim();
++    const origin = String(filters.origin || "").trim();
+ 
+     return (rows || []).filter((row) => {
+       const matchesTitle = !titleQuery || String(row.title || "").toLowerCase().includes(titleQuery);
+@@ -225,8 +272,9 @@
+         !modelQuery || String(row.modelName || "").toLowerCase().includes(modelQuery);
+       const matchesCreatedDate =
+         !createdDate || getLocalDateKeyFromUnixSeconds(row.createdAt) === createdDate;
++      const matchesOrigin = !origin || String(row.usageOrigin || "") === origin;
+ 
+-      return matchesTitle && matchesModel && matchesCreatedDate;
++      return matchesTitle && matchesModel && matchesCreatedDate && matchesOrigin;
+     });
+   }
+ 
+@@ -348,23 +396,52 @@
+     }
+ 
+     return `
+-      <div class="pricing-head pricing-head-two">
+-        <span>模型</span>
+-        <span>费用</span>
++      <div class="table-scroll compact-table-scroll">
++        <table class="billing-table compact-table">
++          <thead>
++            <tr>
++              <th>模型</th>
++              <th>费用</th>
++            </tr>
++          </thead>
++          <tbody>
++            ${rows
++              .map(
++                (row) => `
++                  <tr>
++                    <td>${escapeHtml(formatModelLabel(row.modelName))}</td>
++                    <td>${formatUsd(row.totalUsd)}</td>
++                  </tr>
++                `
++              )
++              .join("")}
++          </tbody>
++        </table>
+       </div>
+-      ${rows
+-        .map(
+-          (row) => `
+-            <div class="openclaw-model-row">
+-              <strong>${escapeHtml(formatModelLabel(row.modelName))}</strong>
+-              <strong>${formatUsd(row.totalUsd)}</strong>
+-            </div>
+-          `
+-        )
+-        .join("")}
+     `;
+   }
+ 
++  function buildUserTurnMarkup(row) {
++    const messages = row?.userMessages || [];
++    if (!messages.length) {
++      return '<div class="session-turn-empty">当前本地日志里没有更多用户轮次</div>';
++    }
++
++    return messages
++      .map(
++        (message, index) => `
++          <article class="session-turn-card">
++            <div class="session-turn-head">
++              <strong>第 ${index + 1} 轮</strong>
++              <span>${message.timestamp ? new Date(message.timestamp).toLocaleString("zh-CN") : "时间未知"}</span>
++            </div>
++            <p>${escapeHtml(summarizePromptText(message.text, 320) || "-")}</p>
++          </article>
++        `
++      )
++      .join("");
++  }
++
+   function buildSessionDetailCostMarkup(row) {
+     if (!row?.tokenUsage || !row?.cost) {
+       return '<div class="session-detail-cost-row"><span>本地最近日志里没有可用的细分账单</span></div>';
+@@ -442,7 +519,7 @@
+     const pageRows = getSessionPageRows(rows, dashboardState.sessionPage, 10);
+ 
+     if (!rows.length) {
+-      tableBody.innerHTML = '<tr><td colspan="8" class="empty-row">没有符合条件的会话</td></tr>';
++      tableBody.innerHTML = '<tr><td colspan="10" class="empty-row">没有符合条件的会话</td></tr>';
+       if (pageLabel) {
+         pageLabel.textContent = "第 1 / 1 页";
+       }
+@@ -461,10 +538,12 @@
+           <tr>
+             <td><span class="thread-id">${escapeHtml(thread.id || "-")}</span></td>
+             <td>
+-              <span class="thread-title">${escapeHtml(thread.title || "(untitled)")}</span>
+-              <span class="thread-meta">${escapeHtml(thread.cwd || "-")}</span>
++              <span class="thread-title">${escapeHtml(thread.titlePreview || thread.title || "(untitled)")}</span>
++              <span class="thread-meta">${escapeHtml(thread.workspaceLabel || thread.cwd || "-")}</span>
+             </td>
++            <td><span class="origin-badge ${usageOriginBadgeClass(thread.usageOrigin)}">${escapeHtml(thread.usageOriginLabel || "Codex 本地")}</span></td>
+             <td>${escapeHtml(formatModelLabel(thread.modelName))}</td>
++            <td><span class="status-badge ${statusBadgeClass(thread.statusLabel)}">${escapeHtml(thread.statusLabel || "未知")}</span></td>
+             <td>${formatResetTime(thread.createdAt)}</td>
+             <td>${formatTokenMillions(thread.tokensUsed)}</td>
+             <td>${thread.cost ? formatUsd(thread.cost.totalUsd) : "-"}</td>
+@@ -883,7 +962,7 @@
+       ? formatTokenMillions(currentSession.totalTokens)
+       : "-";
+     document.getElementById("current-session-last").textContent = currentSession
+-      ? `最近一次 ${formatTokenMillions(currentSession.lastTokens)}`
++      ? `${currentSession.usageOriginLabel || "Codex 本地"} · 最近一次 ${formatTokenMillions(currentSession.lastTokens)}`
+       : "最近一次不可用";
+     document.getElementById("current-model-name").textContent = formatModelLabel(
+       currentSession?.modelName
+@@ -1121,33 +1200,89 @@
+     const idNode = document.getElementById("detail-thread-id");
+     const titleNode = document.getElementById("detail-thread-title");
+     const promptNode = document.getElementById("detail-thread-prompt");
++    const promptDetailsNode = document.getElementById("detail-thread-prompt-details");
++    const promptFullNode = document.getElementById("detail-thread-prompt-full");
++    const messagesNode = document.getElementById("detail-thread-messages");
+     const costsNode = document.getElementById("detail-thread-costs");
+     const buttons = document.querySelectorAll(".session-detail-button");
+ 
+-    if (!dialog || !idNode || !titleNode || !promptNode || !costsNode || !buttons.length) {
++    if (
++      !dialog ||
++      !idNode ||
++      !titleNode ||
++      !promptNode ||
++      !promptDetailsNode ||
++      !promptFullNode ||
++      !messagesNode ||
++      !costsNode ||
++      !buttons.length
++    ) {
+       return;
+     }
+ 
+     const rowsById = new Map((snapshot.recentThreads || []).map((row) => [row.id, row]));
+ 
++    if (!dialog.dataset.backdropBound) {
++      dialog.addEventListener("click", (event) => {
++        if (shouldCloseDialogFromBackdropClick(dialog, event.target)) {
++          dialog.close();
++        }
++      });
++      dialog.dataset.backdropBound = "true";
++    }
++
+     for (const button of buttons) {
+       button.addEventListener("click", () => {
+         const row = rowsById.get(button.dataset.threadId);
+         idNode.textContent = row?.id || "-";
+-        titleNode.textContent = row?.title || "-";
+-        promptNode.textContent = row?.promptText || "未在本地日志中找到提示词";
++        titleNode.textContent = row?.titlePreview || row?.title || "-";
++        const promptText = row?.promptText || "";
++        const promptSummary = summarizePromptText(promptText, 220);
++        promptNode.textContent = promptSummary || "未在本地日志中找到提示词";
++        promptFullNode.textContent = promptText || "-";
++        promptDetailsNode.hidden = !promptText || promptSummary === normalizeInlineText(promptText);
++        promptDetailsNode.open = false;
++        messagesNode.innerHTML = buildUserTurnMarkup(row);
+         costsNode.innerHTML = buildSessionDetailCostMarkup(row);
+         dialog.showModal();
+       });
+     }
+   }
+ 
++  function initializeSourceTabs() {
++    const triggers = document.querySelectorAll("[data-source-tab]");
++    const panels = document.querySelectorAll("[data-source-panel]");
++
++    if (!triggers.length || !panels.length) {
++      return;
++    }
++
++    const setActive = (value) => {
++      for (const trigger of triggers) {
++        const active = trigger.dataset.sourceTab === value;
++        trigger.classList.toggle("active", active);
++        trigger.setAttribute("aria-selected", active ? "true" : "false");
++      }
++
++      for (const panel of panels) {
++        panel.classList.toggle("active", panel.dataset.sourcePanel === value);
++      }
++    };
++
++    for (const trigger of triggers) {
++      trigger.addEventListener("click", () => {
++        setActive(trigger.dataset.sourceTab);
++      });
++    }
++  }
++
+   function initializeSessionFilters() {
+     const titleInput = document.getElementById("session-filter-title");
+     const modelInput = document.getElementById("session-filter-model");
+     const dateInput = document.getElementById("session-filter-date");
++    const originInput = document.getElementById("session-filter-origin");
+ 
+-    if (!titleInput || !modelInput || !dateInput) {
++    if (!titleInput || !modelInput || !dateInput || !originInput) {
+       return;
+     }
+ 
+@@ -1156,6 +1291,7 @@
+         title: titleInput.value,
+         model: modelInput.value,
+         createdDate: dateInput.value,
++        origin: originInput.value,
+       };
+       dashboardState.sessionPage = 1;
+       if (dashboardState.snapshot) {
+@@ -1166,6 +1302,7 @@
+     titleInput.addEventListener("input", updateFilters);
+     modelInput.addEventListener("input", updateFilters);
+     dateInput.addEventListener("input", updateFilters);
++    originInput.addEventListener("input", updateFilters);
+   }
+ 
+   function initializeSourceForm() {
+@@ -1213,6 +1350,7 @@
+ 
+   async function startDashboard() {
+     initializeTabs();
++    initializeSourceTabs();
+     initializeSourceForm();
+     initializeBillingControls();
+     initializeSessionPagination();
+@@ -1267,6 +1405,8 @@
+       getSessionPageRows,
+       getScopeRows,
+       getVisibleLedgerRows,
++      summarizePromptText,
++      shouldCloseDialogFromBackdropClick,
+       summarizeLedgerRows,
+     };
+   }
+diff --git a/public/index.html b/public/index.html
+index 9b16c5a..1e510f1 100644
+--- a/public/index.html
++++ b/public/index.html
+@@ -8,387 +8,445 @@
+     <link rel="stylesheet" href="/styles.css" />
+   </head>
+   <body>
+-    <div class="page-shell">
+-      <header class="hero">
+-        <div class="hero-copy">
+-          <p class="eyebrow">Codex 本地消耗与限制监控</p>
++    <div class="workspace-shell">
++      <header class="topbar-card card">
++        <div class="topbar-copy">
++          <p class="eyebrow">Codex Local Usage Dashboard</p>
+           <h1>Codex用量统计</h1>
+           <p class="hero-text">
+-            默认读取 <code>~/.codex</code>，也支持切换到你指定的本地目录，展示 token
+-            消耗、限制窗口、模型价格与费用估算。
++            本地 Codex 与 OpenClaw / OAuth 用量分开展示，优先保留高密度信息。
+           </p>
+         </div>
+-        <div class="hero-status">
+-          <div class="hero-status-top">
+-            <div class="status-chip">
+-              <span class="status-dot" id="live-dot"></span>
+-              <span id="live-status">连接中</span>
+-            </div>
+-            <div class="plan-badge">
+-              <span>订阅计划</span>
+-              <strong id="hero-plan">未知</strong>
+-            </div>
++        <div class="topbar-meta">
++          <div class="status-chip badge badge-outline">
++            <span class="status-dot" id="live-dot"></span>
++            <span id="live-status">连接中</span>
++          </div>
++          <div class="plan-badge badge badge-secondary">
++            <span>订阅计划</span>
++            <strong id="hero-plan">未知</strong>
+           </div>
+-          <p id="generated-at" class="meta-line">等待第一份快照</p>
+-          <p id="source-home" class="meta-line"></p>
+-          <form id="source-form" class="source-form">
+-            <label for="codex-home-input">本地数据目录</label>
+-            <div class="source-form-row">
+-              <input
+-                id="codex-home-input"
+-                name="codexHome"
+-                type="text"
+-                placeholder="粘贴 .codex 目录或其上级目录"
+-                autocomplete="off"
+-              />
+-              <button type="submit">应用路径</button>
+-              <button type="button" id="reset-source-button" class="secondary-button">恢复默认</button>
+-            </div>
+-            <p id="source-feedback" class="source-feedback">你可以直接输入文件夹地址，然后切换数据源。</p>
+-          </form>
+         </div>
+       </header>
+ 
+-      <main class="dashboard-grid">
+-        <section class="panel span-12">
+-          <div class="section-heading">
+-            <span>总览</span>
+-            <small>统一以 M 表示百万 token</small>
+-          </div>
+-          <div class="metric-grid metric-grid-five">
+-            <article class="metric-card">
+-              <span class="metric-label">历史总消耗</span>
+-              <strong class="metric-value" id="total-tokens">-</strong>
+-              <span class="metric-subvalue metric-subvalue-muted" id="total-tokens-raw">-</span>
+-            </article>
+-            <article class="metric-card">
+-              <span class="metric-label">当前线程数</span>
+-              <strong class="metric-value" id="total-threads">-</strong>
+-              <span class="metric-subvalue metric-subvalue-muted">未归档会话</span>
+-            </article>
+-            <article class="metric-card accent-card">
+-              <span class="metric-label">当前会话消耗</span>
+-              <strong class="metric-value" id="current-session-tokens">-</strong>
+-              <span class="metric-subvalue" id="current-session-last">最近一次 -</span>
+-            </article>
+-            <article class="metric-card bill-card">
+-              <span class="metric-label">累计估算费用</span>
+-              <strong class="metric-value" id="total-estimated-cost">-</strong>
+-              <span class="metric-subvalue metric-subvalue-muted">根据本地日志里的每次增量使用记录估算</span>
+-            </article>
+-            <article class="metric-card cost-card">
+-              <span class="metric-label">当前模型</span>
+-              <strong class="metric-value" id="current-model-name">-</strong>
+-              <span class="metric-subvalue" id="current-model-cost">当前会话费用 -</span>
+-            </article>
+-          </div>
+-        </section>
++      <div class="source-panel-tabs" role="tablist" aria-label="数据来源视图">
++        <button type="button" class="source-tab-trigger active" data-source-tab="codex">Codex 本地</button>
++        <button type="button" class="source-tab-trigger" data-source-tab="openclaw">OpenClaw / OAuth</button>
++      </div>
+ 
+-        <section class="panel span-12">
+-          <div class="section-heading">
+-            <span>限制窗口</span>
+-            <small>本地日志中最近一次出现的限制快照</small>
+-          </div>
+-          <div class="limit-grid">
+-            <article class="quota-card">
+-              <div class="quota-topline">
+-                <span id="primary-label">5小时窗口</span>
+-                <strong id="primary-percent">-</strong>
+-              </div>
+-              <div class="quota-bar"><div id="primary-bar"></div></div>
+-              <p class="quota-meta" id="primary-remaining">剩余 -</p>
+-              <p class="quota-meta" id="primary-reset">等待快照</p>
+-              <div class="reset-progress">
+-                <div class="reset-progress-track"><div id="primary-reset-progress-bar"></div></div>
+-                <div class="reset-progress-meta">
+-                  <span>距重置进度</span>
+-                  <strong id="primary-reset-progress">-</strong>
++      <main class="content-grid">
++        <div class="stack-panel stack-panel-main source-panel active" data-source-panel="codex">
++          <section class="panel hero-panel card">
++            <div class="hero-grid">
++              <div class="hero-copy">
++                <div class="section-heading section-heading-stacked card-header">
++                  <span>数据源与刷新</span>
++                  <small>本地数据源、目录切换与来源说明</small>
+                 </div>
+-              </div>
+-            </article>
+-            <article class="quota-card">
+-              <div class="quota-topline">
+-                <span id="secondary-label">7天窗口</span>
+-                <strong id="secondary-percent">-</strong>
+-              </div>
+-              <div class="quota-bar"><div id="secondary-bar"></div></div>
+-              <p class="quota-meta" id="secondary-remaining">剩余 -</p>
+-              <p class="quota-meta" id="secondary-reset">等待快照</p>
+-              <div class="reset-progress">
+-                <div class="reset-progress-track"><div id="secondary-reset-progress-bar"></div></div>
+-                <div class="reset-progress-meta">
+-                  <span>距重置进度</span>
+-                  <strong id="secondary-reset-progress">-</strong>
++                <div class="hero-note-grid card-content">
++                  <article class="hero-note">
++                    <span class="hero-note-label">读取范围</span>
++                    <strong>Codex 本地</strong>
++                    <p>来自 <code>~/.codex</code> 的 SQLite 与 session JSONL，代表直接使用 Codex 的 token。</p>
++                  </article>
++                  <article class="hero-note">
++                    <span class="hero-note-label">辅助来源</span>
++                    <strong>OpenClaw / OAuth</strong>
++                    <p>来自 <code>codexbar cost --provider codex</code>，用于识别 OpenClaw 间接消耗的 Codex token。</p>
++                  </article>
+                 </div>
+               </div>
+-            </article>
+-            <article class="quota-card quota-meta-card">
+-              <div class="quota-topline">
+-                <span>账户限制信息</span>
+-                <strong id="plan-type">未知</strong>
+-              </div>
+-              <p class="quota-meta" id="credits-status">等待限制信息</p>
+-              <p class="quota-meta" id="rate-limit-source">限制来源 -</p>
+-            </article>
+-          </div>
+ 
+-          <div class="detail-grid">
+-            <article class="panel inset-panel">
+-              <div class="section-heading compact-heading">
+-                <span>当前会话账单明细</span>
+-                <small>这是当前会话累计，不是全局累计</small>
+-              </div>
+-              <div class="cost-breakdown" id="cost-breakdown">
+-                <div class="cost-row">
+-                  <span>等待数据</span>
++              <div class="hero-status">
++                <div class="hero-status-header">
++                  <div>
++                    <p class="status-kicker">实时状态</p>
++                    <p id="generated-at" class="meta-line">等待第一份快照</p>
++                  </div>
++                  <div class="status-pill badge badge-outline">本地模式</div>
+                 </div>
++                <p id="source-home" class="meta-line meta-line-strong"></p>
++                <form id="source-form" class="source-form">
++                  <label for="codex-home-input">本地数据目录</label>
++                  <div class="source-form-row">
++                    <input
++                      id="codex-home-input"
++                      name="codexHome"
++                      type="text"
++                      placeholder="粘贴 .codex 目录或其上级目录"
++                      autocomplete="off"
++                    />
++                    <button type="submit">应用路径</button>
++                    <button type="button" id="reset-source-button" class="secondary-button">
++                      恢复默认
++                    </button>
++                  </div>
++                  <p id="source-feedback" class="source-feedback">
++                    直接输入文件夹地址后切换数据源；默认回退到当前用户的 <code>~/.codex</code>。
++                  </p>
++                </form>
+               </div>
+-            </article>
+-            <article class="panel inset-panel">
+-              <div class="section-heading compact-heading">
+-                <span>模型价格表</span>
+-                <small>同价模型自动合并展示</small>
+-              </div>
+-              <div id="pricing-table" class="pricing-table empty-state">等待数据</div>
+-            </article>
+-          </div>
+-        </section>
++            </div>
++          </section>
+ 
+-        <section class="panel span-12">
+-          <div class="section-heading">
+-            <span>OpenClaw / ChatGPT 用量</span>
+-            <small>来源于 codexbar local cost，仅汇总 GPT / ChatGPT 相关模型</small>
+-          </div>
+-          <div class="metric-grid metric-grid-four">
+-            <article class="metric-card">
+-              <span class="metric-label">当前 Session Token</span>
+-              <strong class="metric-value" id="openclaw-session-tokens">-</strong>
+-              <span class="metric-subvalue metric-subvalue-muted" id="openclaw-session-cost">当前费用 -</span>
+-            </article>
+-            <article class="metric-card bill-card">
+-              <span class="metric-label">近 30 天 Token</span>
+-              <strong class="metric-value" id="openclaw-total-tokens">-</strong>
+-              <span class="metric-subvalue metric-subvalue-muted" id="openclaw-total-cost">近 30 天费用 -</span>
+-            </article>
+-            <article class="metric-card cost-card">
+-              <span class="metric-label">当前配置模型</span>
+-              <strong class="metric-value" id="openclaw-top-model">-</strong>
+-              <span class="metric-subvalue" id="openclaw-top-model-cost">模型费用 -</span>
+-            </article>
+-            <article class="metric-card">
+-              <span class="metric-label">数据来源</span>
+-              <strong class="metric-value metric-value-compact" id="openclaw-source-name">-</strong>
+-              <span class="metric-subvalue metric-subvalue-muted" id="openclaw-source-updated">等待数据</span>
+-            </article>
+-          </div>
++          <section class="panel overview-panel card">
++            <div class="section-heading">
++              <span>总览</span>
++              <small>统一以 M 表示百万 token</small>
++            </div>
++            <div class="metric-grid metric-grid-five">
++              <article class="metric-card">
++                <span class="metric-label">Codex 本地总消耗</span>
++                <strong class="metric-value" id="total-tokens">-</strong>
++                <span class="metric-subvalue metric-subvalue-muted" id="total-tokens-raw">-</span>
++              </article>
++              <article class="metric-card">
++                <span class="metric-label">Codex 本地线程数</span>
++                <strong class="metric-value" id="total-threads">-</strong>
++                <span class="metric-subvalue metric-subvalue-muted">未归档会话</span>
++              </article>
++              <article class="metric-card accent-card">
++                <span class="metric-label">当前 Codex 线程</span>
++                <strong class="metric-value" id="current-session-tokens">-</strong>
++                <span class="metric-subvalue" id="current-session-last">最近一次 -</span>
++              </article>
++              <article class="metric-card bill-card">
++                <span class="metric-label">Codex 本地累计费用</span>
++                <strong class="metric-value" id="total-estimated-cost">-</strong>
++                <span class="metric-subvalue metric-subvalue-muted">根据本地日志里的每次增量使用记录估算</span>
++              </article>
++              <article class="metric-card cost-card">
++                <span class="metric-label">当前模型</span>
++                <strong class="metric-value" id="current-model-name">-</strong>
++                <span class="metric-subvalue" id="current-model-cost">当前会话费用 -</span>
++              </article>
++            </div>
++          </section>
+ 
+-          <div class="detail-grid">
+-            <article class="panel inset-panel">
+-              <div class="section-heading compact-heading">
+-                <span>按模型费用汇总</span>
+-                <small>仅展示识别到的 GPT / ChatGPT 模型</small>
+-              </div>
+-              <div id="openclaw-model-table" class="pricing-table empty-state">等待数据</div>
+-            </article>
+-            <article class="panel inset-panel">
+-              <div class="section-heading compact-heading">
+-                <span>最近每日汇总</span>
+-                <small>最近 7 天</small>
++          <section class="panel card">
++            <div class="section-heading">
++              <span>限制窗口</span>
++              <small>本地日志中最近一次出现的限制快照</small>
++            </div>
++            <div class="limit-grid">
++              <article class="quota-card">
++                <div class="quota-topline">
++                  <span id="primary-label">5小时窗口</span>
++                  <strong id="primary-percent">-</strong>
++                </div>
++                <div class="quota-bar"><div id="primary-bar"></div></div>
++                <p class="quota-meta" id="primary-remaining">剩余 -</p>
++                <p class="quota-meta" id="primary-reset">等待快照</p>
++                <div class="reset-progress">
++                  <div class="reset-progress-track"><div id="primary-reset-progress-bar"></div></div>
++                  <div class="reset-progress-meta">
++                    <span>距重置进度</span>
++                    <strong id="primary-reset-progress">-</strong>
++                  </div>
++                </div>
++              </article>
++              <article class="quota-card">
++                <div class="quota-topline">
++                  <span id="secondary-label">7天窗口</span>
++                  <strong id="secondary-percent">-</strong>
++                </div>
++                <div class="quota-bar"><div id="secondary-bar"></div></div>
++                <p class="quota-meta" id="secondary-remaining">剩余 -</p>
++                <p class="quota-meta" id="secondary-reset">等待快照</p>
++                <div class="reset-progress">
++                  <div class="reset-progress-track"><div id="secondary-reset-progress-bar"></div></div>
++                  <div class="reset-progress-meta">
++                    <span>距重置进度</span>
++                    <strong id="secondary-reset-progress">-</strong>
++                  </div>
++                </div>
++              </article>
++              <article class="quota-card quota-meta-card">
++                <div class="quota-topline">
++                  <span>账户限制信息</span>
++                  <strong id="plan-type">未知</strong>
++                </div>
++                <p class="quota-meta" id="credits-status">等待限制信息</p>
++                <p class="quota-meta" id="rate-limit-source">限制来源 -</p>
++              </article>
++            </div>
++
++            <div class="detail-grid">
++              <article class="panel inset-panel">
++                <div class="section-heading compact-heading">
++                  <span>当前会话账单明细</span>
++                  <small>这是当前会话累计，不是全局累计</small>
++                </div>
++                <div class="cost-breakdown" id="cost-breakdown">
++                  <div class="cost-row">
++                    <span>等待数据</span>
++                  </div>
++                </div>
++              </article>
++              <article class="panel inset-panel">
++                <div class="section-heading compact-heading">
++                  <span>模型价格表</span>
++                  <small>同价模型自动合并展示</small>
++                </div>
++                <div id="pricing-table" class="pricing-table empty-state">等待数据</div>
++              </article>
++            </div>
++          </section>
++
++          <section class="panel span-12 card">
++            <div class="section-heading">
++              <span>全部会话与账单</span>
++              <small>会话详情、账单走势与来源筛选</small>
++            </div>
++            <div class="tab-strip tabs-list" role="tablist" aria-label="全部会话与账单">
++              <button
++                type="button"
++                class="tab-trigger tabs-trigger active"
++                data-tab-trigger="sessions"
++                role="tab"
++                aria-selected="true"
++              >
++                全部会话
++              </button>
++              <button
++                type="button"
++                class="tab-trigger tabs-trigger"
++                data-tab-trigger="billing"
++                role="tab"
++                aria-selected="false"
++              >
++                账单走势
++              </button>
++            </div>
++
++            <div class="tab-panel active" data-tab-panel="sessions">
++              <div class="session-filters">
++                <label>
++                  <span>按标题筛选</span>
++                  <input id="session-filter-title" type="text" placeholder="输入标题关键词" />
++                </label>
++                <label>
++                  <span>按模型筛选</span>
++                  <input id="session-filter-model" type="text" placeholder="输入模型名" />
++                </label>
++                <label>
++                  <span>来源筛选</span>
++                  <select id="session-filter-origin">
++                    <option value="">全部来源</option>
++                    <option value="codex-local">Codex 本地</option>
++                    <option value="openclaw-oauth">OpenClaw / OAuth</option>
++                  </select>
++                </label>
++                <label>
++                  <span>创建日期</span>
++                  <input id="session-filter-date" type="date" />
++                </label>
+               </div>
+               <div class="table-scroll">
+-                <table class="billing-table">
++                <table>
+                   <thead>
+                     <tr>
+-                      <th>日期</th>
+-                      <th>Token</th>
++                      <th>会话ID</th>
++                      <th>标题</th>
++                      <th>来源</th>
++                      <th>模型</th>
++                      <th>状态</th>
++                      <th>创建时间</th>
++                      <th>消耗</th>
+                       <th>费用</th>
++                      <th>更新时间</th>
++                      <th>详情</th>
+                     </tr>
+                   </thead>
+-                  <tbody id="openclaw-daily-body">
++                  <tbody id="recent-threads">
+                     <tr>
+-                      <td colspan="3" class="empty-row">等待数据</td>
++                      <td colspan="10" class="empty-row">等待数据</td>
+                     </tr>
+                   </tbody>
+                 </table>
+               </div>
+-            </article>
+-          </div>
+-        </section>
+-
+-        <section class="panel span-12">
+-          <div class="section-heading">
+-            <span>全部会话与账单</span>
+-            <small>切换查看全部会话表格或账单走势</small>
+-          </div>
+-          <div class="tab-strip" role="tablist" aria-label="全部会话与账单">
+-            <button
+-              type="button"
+-              class="tab-trigger active"
+-              data-tab-trigger="sessions"
+-              role="tab"
+-              aria-selected="true"
+-            >
+-              全部会话
+-            </button>
+-            <button
+-              type="button"
+-              class="tab-trigger"
+-              data-tab-trigger="billing"
+-              role="tab"
+-              aria-selected="false"
+-            >
+-              账单走势
+-            </button>
+-          </div>
+-
+-          <div class="tab-panel active" data-tab-panel="sessions">
+-            <div class="session-filters">
+-              <label>
+-                <span>按标题筛选</span>
+-                <input id="session-filter-title" type="text" placeholder="输入标题关键词" />
+-              </label>
+-              <label>
+-                <span>按模型筛选</span>
+-                <input id="session-filter-model" type="text" placeholder="输入模型名" />
+-              </label>
+-              <label>
+-                <span>创建日期</span>
+-                <input id="session-filter-date" type="date" />
+-              </label>
+-            </div>
+-            <div class="table-scroll">
+-              <table>
+-                <thead>
+-                  <tr>
+-                    <th>会话ID</th>
+-                    <th>标题</th>
+-                    <th>模型</th>
+-                    <th>创建时间</th>
+-                    <th>消耗</th>
+-                    <th>费用</th>
+-                    <th>更新时间</th>
+-                    <th>详情</th>
+-                  </tr>
+-                </thead>
+-                <tbody id="recent-threads">
+-                  <tr>
+-                    <td colspan="8" class="empty-row">等待数据</td>
+-                  </tr>
+-                </tbody>
+-              </table>
+-            </div>
+-            <div class="session-pagination">
+-              <button type="button" id="session-prev" class="secondary-button">上一页</button>
+-              <span id="session-page-label">第 1 / 1 页</span>
+-              <button type="button" id="session-next" class="secondary-button">下一页</button>
++              <div class="session-pagination">
++                <button type="button" id="session-prev" class="secondary-button">上一页</button>
++                <span id="session-page-label">第 1 / 1 页</span>
++                <button type="button" id="session-next" class="secondary-button">下一页</button>
++              </div>
++              <dialog id="session-detail-dialog" class="session-detail-dialog">
++                <form method="dialog" class="session-detail-shell">
++                  <div class="section-heading compact-heading">
++                    <span>会话详情</span>
++                    <button type="submit" class="session-detail-button">关闭</button>
++                  </div>
++                  <div class="session-detail-body">
++                    <p><strong>会话ID：</strong><span id="detail-thread-id">-</span></p>
++                    <p><strong>标题：</strong><span id="detail-thread-title">-</span></p>
++                    <p><strong>提示词摘要：</strong></p>
++                    <pre id="detail-thread-prompt">-</pre>
++                    <details id="detail-thread-prompt-details" class="prompt-details" hidden>
++                      <summary>查看完整提示词</summary>
++                      <pre id="detail-thread-prompt-full">-</pre>
++                    </details>
++                    <p><strong>用户轮次：</strong></p>
++                    <div id="detail-thread-messages" class="session-turn-list">-</div>
++                    <p><strong>Token / 费用明细：</strong></p>
++                    <div id="detail-thread-costs" class="session-detail-costs">-</div>
++                  </div>
++                </form>
++              </dialog>
+             </div>
+-            <dialog id="session-detail-dialog" class="session-detail-dialog">
+-              <form method="dialog" class="session-detail-shell">
+-                <div class="section-heading compact-heading">
+-                  <span>会话详情</span>
+-                  <button type="submit" class="secondary-button">关闭</button>
++
++            <div class="tab-panel" data-tab-panel="billing" hidden>
++              <div class="billing-toolbar">
++                <div class="tab-strip tabs-list compact-strip" role="tablist" aria-label="账单统计范围">
++                  <button
++                    type="button"
++                    class="tab-trigger tabs-trigger active"
++                    data-billing-scope="cumulative"
++                  >
++                    累计
++                  </button>
++                  <button
++                    type="button"
++                    class="tab-trigger tabs-trigger"
++                    data-billing-scope="month"
++                  >
++                    自然月
++                  </button>
+                 </div>
+-                <div class="session-detail-body">
+-                  <p><strong>会话ID：</strong><span id="detail-thread-id">-</span></p>
+-                  <p><strong>标题：</strong><span id="detail-thread-title">-</span></p>
+-                  <p><strong>提示词：</strong></p>
+-                  <pre id="detail-thread-prompt">-</pre>
+-                  <p><strong>Token / 费用明细：</strong></p>
+-                  <div id="detail-thread-costs" class="session-detail-costs">-</div>
++                <div class="preset-strip">
++                  <button type="button" class="preset-chip" data-range-preset="7">7天</button>
++                  <button type="button" class="preset-chip" data-range-preset="30">30天</button>
++                  <button type="button" class="preset-chip" data-range-preset="month">本月</button>
++                  <button type="button" class="preset-chip" data-range-preset="all">全部</button>
+                 </div>
+-              </form>
+-            </dialog>
+-          </div>
+-
+-          <div class="tab-panel" data-tab-panel="billing" hidden>
+-            <div class="billing-toolbar">
+-              <div class="tab-strip compact-strip" role="tablist" aria-label="账单统计范围">
+-                <button
+-                  type="button"
+-                  class="tab-trigger active"
+-                  data-billing-scope="cumulative"
+-                >
+-                  累计
+-                </button>
+-                <button
+-                  type="button"
+-                  class="tab-trigger"
+-                  data-billing-scope="month"
+-                >
+-                  自然月
+-                </button>
+-              </div>
+-              <div class="preset-strip">
+-                <button type="button" class="preset-chip" data-range-preset="7">7天</button>
+-                <button type="button" class="preset-chip" data-range-preset="30">30天</button>
+-                <button type="button" class="preset-chip" data-range-preset="month">本月</button>
+-                <button type="button" class="preset-chip" data-range-preset="all">全部</button>
+-              </div>
+-            </div>
+-            <div class="daily-chart-summary billing-summary-grid">
+-              <div class="summary-pill">
+-                <span id="scope-total-cost-label">累计费用</span>
+-                <strong id="scope-total-cost">-</strong>
+               </div>
+-              <div class="summary-pill">
+-                <span id="scope-total-tokens-label">累计 Token</span>
+-                <strong id="scope-total-tokens">-</strong>
+-              </div>
+-              <div class="summary-pill">
+-                <span>当前范围费用</span>
+-                <strong id="range-total-cost">-</strong>
++              <div class="daily-chart-summary billing-summary-grid">
++                <div class="summary-pill">
++                  <span id="scope-total-cost-label">累计费用</span>
++                  <strong id="scope-total-cost">-</strong>
++                </div>
++                <div class="summary-pill">
++                  <span id="scope-total-tokens-label">累计 Token</span>
++                  <strong id="scope-total-tokens">-</strong>
++                </div>
++                <div class="summary-pill">
++                  <span>当前范围费用</span>
++                  <strong id="range-total-cost">-</strong>
++                </div>
++                <div class="summary-pill">
++                  <span>当前范围 Token</span>
++                  <strong id="range-total-tokens">-</strong>
++                </div>
+               </div>
+-              <div class="summary-pill">
+-                <span>当前范围 Token</span>
+-                <strong id="range-total-tokens">-</strong>
++              <article class="line-chart-card combined-chart-card">
++                <div class="chart-card-head">
++                  <span>每日 Token / 费用</span>
++                  <small id="billing-scope-name">累计</small>
++                  <strong id="combined-chart-peak">-</strong>
++                </div>
++                <div id="combined-chart" class="line-chart-shell">等待数据</div>
++                <div class="range-panel">
++                  <div class="range-panel-head">
++                    <span>时间范围</span>
++                    <strong id="billing-range-label">-</strong>
++                  </div>
++                  <div class="range-track">
++                    <div class="range-track-base"></div>
++                    <div id="billing-range-selection" class="range-track-selection"></div>
++                  </div>
++                  <div class="range-inputs">
++                    <input id="billing-range-start" type="range" min="0" max="0" value="0" />
++                    <input id="billing-range-end" type="range" min="0" max="0" value="0" />
++                  </div>
++                </div>
++              </article>
++              <div class="ledger-panel">
++                <div class="section-heading compact-heading ledger-heading">
++                  <span>账单明细</span>
++                  <small id="billing-empty-note">等待数据</small>
++                </div>
++                <div class="table-scroll">
++                  <table class="billing-table">
++                    <thead>
++                      <tr>
++                        <th>日期</th>
++                        <th>Token</th>
++                        <th>费用</th>
++                      </tr>
++                    </thead>
++                    <tbody id="daily-ledger-body">
++                      <tr>
++                        <td colspan="3" class="empty-row">等待数据</td>
++                      </tr>
++                    </tbody>
++                  </table>
++                </div>
+               </div>
+             </div>
+-            <article class="line-chart-card combined-chart-card">
+-              <div class="chart-card-head">
+-                <span>每日 Token / 费用</span>
+-                <small id="billing-scope-name">累计</small>
+-                <strong id="combined-chart-peak">-</strong>
+-              </div>
+-              <div id="combined-chart" class="line-chart-shell">等待数据</div>
+-              <div class="range-panel">
+-                <div class="range-panel-head">
+-                  <span>时间范围</span>
+-                  <strong id="billing-range-label">-</strong>
++          </section>
++        </div>
++
++        <aside class="stack-panel source-panel" data-source-panel="openclaw">
++          <section class="panel side-panel card">
++            <div class="section-heading section-heading-stacked">
++              <span>OpenClaw / OAuth 经 Codex</span>
++              <small>通过 codexbar 聚合读取的 OAuth 侧 Codex 消耗</small>
++            </div>
++            <div class="metric-grid metric-grid-two">
++              <article class="metric-card">
++                <span class="metric-label">当前 OAuth Session Token</span>
++                <strong class="metric-value" id="openclaw-session-tokens">-</strong>
++                <span class="metric-subvalue metric-subvalue-muted" id="openclaw-session-cost">当前费用 -</span>
++              </article>
++              <article class="metric-card bill-card">
++                <span class="metric-label">近 30 天 OAuth Token</span>
++                <strong class="metric-value" id="openclaw-total-tokens">-</strong>
++                <span class="metric-subvalue metric-subvalue-muted" id="openclaw-total-cost">近 30 天费用 -</span>
++              </article>
++              <article class="metric-card cost-card">
++                <span class="metric-label">当前配置模型</span>
++                <strong class="metric-value" id="openclaw-top-model">-</strong>
++                <span class="metric-subvalue" id="openclaw-top-model-cost">模型费用 -</span>
++              </article>
++              <article class="metric-card">
++                <span class="metric-label">数据来源</span>
++                <strong class="metric-value metric-value-compact" id="openclaw-source-name">-</strong>
++                <span class="metric-subvalue metric-subvalue-muted" id="openclaw-source-updated">等待数据</span>
++              </article>
++            </div>
++
++            <div class="side-detail-grid">
++              <article class="panel inset-panel">
++                <div class="section-heading compact-heading">
++                  <span>按模型费用汇总</span>
++                  <small>仅展示识别到的 GPT / ChatGPT 模型</small>
+                 </div>
+-                <div class="range-track">
+-                  <div class="range-track-base"></div>
+-                  <div id="billing-range-selection" class="range-track-selection"></div>
++                <div id="openclaw-model-table" class="pricing-table empty-state">等待数据</div>
++              </article>
++              <article class="panel inset-panel">
++                <div class="section-heading compact-heading">
++                  <span>最近每日汇总</span>
++                  <small>最近 7 天</small>
+                 </div>
+-                <div class="range-inputs">
+-                  <input id="billing-range-start" type="range" min="0" max="0" value="0" />
+-                  <input id="billing-range-end" type="range" min="0" max="0" value="0" />
++                <div class="table-scroll">
++                  <table class="billing-table">
++                    <thead>
++                      <tr>
++                        <th>日期</th>
++                        <th>Token</th>
++                        <th>费用</th>
++                      </tr>
++                    </thead>
++                    <tbody id="openclaw-daily-body">
++                      <tr>
++                        <td colspan="3" class="empty-row">等待数据</td>
++                      </tr>
++                    </tbody>
++                  </table>
+                 </div>
+-              </div>
+-            </article>
+-            <div class="ledger-panel">
+-              <div class="section-heading compact-heading ledger-heading">
+-                <span>账单明细</span>
+-                <small id="billing-empty-note">等待数据</small>
+-              </div>
+-              <div class="table-scroll">
+-                <table class="billing-table">
+-                  <thead>
+-                    <tr>
+-                      <th>日期</th>
+-                      <th>Token</th>
+-                      <th>费用</th>
+-                    </tr>
+-                  </thead>
+-                  <tbody id="daily-ledger-body">
+-                    <tr>
+-                      <td colspan="3" class="empty-row">等待数据</td>
+-                    </tr>
+-                  </tbody>
+-                </table>
+-              </div>
++              </article>
+             </div>
+-          </div>
+-        </section>
++          </section>
++        </aside>
+       </main>
+     </div>
+ 
+diff --git a/public/styles.css b/public/styles.css
+index 844526d..4e0533f 100644
+--- a/public/styles.css
++++ b/public/styles.css
+@@ -1,28 +1,43 @@
+ :root {
+-  --paper: #f3efe5;
+-  --paper-deep: #e2d7c1;
+-  --ink: #171512;
+-  --muted: #655b4d;
+-  --accent: #bf3b20;
+-  --accent-soft: #e2a27a;
+-  --accent-deep: #1b5366;
+-  --line: rgba(23, 21, 18, 0.14);
+-  --shadow: 0 18px 50px rgba(40, 30, 10, 0.08);
++  --background: #f8fafc;
++  --background-accent: #f1f5f9;
++  --surface: #ffffff;
++  --surface-soft: #ffffff;
++  --surface-muted: #f8fafc;
++  --foreground: #0f172a;
++  --muted-foreground: #64748b;
++  --border: #e2e8f0;
++  --border-strong: #cbd5e1;
++  --primary: #0f172a;
++  --primary-foreground: #f8fafc;
++  --accent: #2563eb;
++  --accent-soft: rgba(37, 99, 235, 0.12);
++  --success: #0f766e;
++  --warning: #b45309;
++  --danger: #b91c1c;
++  --ring: rgba(37, 99, 235, 0.28);
++  --shadow: 0 1px 2px rgba(15, 23, 42, 0.05);
++  --shadow-soft: 0 1px 2px rgba(15, 23, 42, 0.04);
++  --radius-xl: 16px;
++  --radius-lg: 12px;
++  --radius-md: 10px;
++  --radius-sm: 8px;
+ }
+ 
+ * {
+   box-sizing: border-box;
+ }
+ 
++html {
++  color-scheme: light;
++}
++
+ body {
+   margin: 0;
+   min-height: 100vh;
+-  background:
+-    radial-gradient(circle at top left, rgba(191, 59, 32, 0.14), transparent 28%),
+-    radial-gradient(circle at bottom right, rgba(31, 60, 87, 0.12), transparent 30%),
+-    linear-gradient(180deg, #f8f4eb 0%, #f0eadc 100%);
+-  color: var(--ink);
+-  font-family: "Avenir Next", "PingFang SC", "Hiragino Sans GB", sans-serif;
++  color: var(--foreground);
++  font-family: "IBM Plex Sans", "PingFang SC", "Helvetica Neue", sans-serif;
++  background: linear-gradient(180deg, #fbfdff 0%, var(--background) 100%);
+ }
+ 
+ code,
+@@ -33,145 +48,322 @@ td:nth-child(3),
+ td:nth-child(4),
+ .summary-pill strong,
+ .reset-progress-meta strong,
+-.plan-badge strong {
++.plan-badge strong,
++.thread-id {
+   font-family: "SF Mono", "Menlo", "Monaco", monospace;
+ }
+ 
+-.page-shell {
+-  max-width: 1320px;
++a {
++  color: inherit;
++}
++
++button,
++input,
++textarea,
++select {
++  font: inherit;
++}
++
++button {
++  border: 0;
++}
++
++.workspace-shell {
++  max-width: 1520px;
+   margin: 0 auto;
+-  padding: 32px 20px 48px;
++  padding: 28px 20px 40px;
+ }
+ 
+-.hero {
+-  display: grid;
+-  grid-template-columns: 1.2fr 0.8fr;
+-  gap: 20px;
+-  align-items: stretch;
+-  margin-bottom: 22px;
++.source-panel-tabs {
++  display: none;
+ }
+ 
+-.hero-copy,
+-.hero-status,
++.source-tab-trigger {
++  min-height: 40px;
++  border: 1px solid var(--border);
++  border-radius: 10px;
++  background: var(--surface);
++  color: var(--muted-foreground);
++  font-weight: 600;
++}
++
++.source-tab-trigger.active {
++  background: var(--foreground);
++  color: #f8fafc;
++}
++
++.topbar-card,
+ .panel {
+-  background: rgba(255, 253, 247, 0.76);
+-  border: 1px solid var(--line);
++  position: relative;
++  background: var(--surface);
++  border: 1px solid var(--border);
+   box-shadow: var(--shadow);
+-  backdrop-filter: blur(10px);
+ }
+ 
+-.hero-copy,
+-.hero-status {
+-  padding: 28px;
+-  border-radius: 24px;
++.topbar-card {
++  display: flex;
++  justify-content: space-between;
++  gap: 20px;
++  align-items: flex-start;
++  padding: 26px 28px;
++  border-radius: var(--radius-xl);
++  margin-bottom: 20px;
++  overflow: hidden;
+ }
+ 
+-.hero-status {
++.topbar-copy,
++.topbar-meta {
+   position: relative;
+-  overflow: hidden;
++  z-index: 1;
+ }
+ 
+-.hero-status::before {
+-  content: "";
+-  position: absolute;
+-  inset: auto -40px -60px auto;
+-  width: 180px;
+-  height: 180px;
+-  border-radius: 50%;
+-  background: radial-gradient(circle, rgba(191, 59, 32, 0.22), transparent 70%);
++.topbar-copy {
++  max-width: 760px;
+ }
+ 
+-.hero-status-top {
++.topbar-meta {
+   display: flex;
+-  justify-content: space-between;
+   gap: 12px;
+   align-items: center;
++  justify-content: flex-end;
+   flex-wrap: wrap;
+ }
+ 
+ .eyebrow {
+   margin: 0 0 10px;
++  color: var(--muted-foreground);
++  font-size: 11px;
++  line-height: 1.4;
++  letter-spacing: 0.22em;
+   text-transform: uppercase;
+-  letter-spacing: 0.18em;
+-  font-size: 12px;
+-  color: var(--muted);
++  font-weight: 700;
+ }
+ 
+ h1 {
+   margin: 0;
+-  font-size: clamp(42px, 8vw, 80px);
+-  line-height: 0.96;
+-  font-family: "Iowan Old Style", "STSong", serif;
+-  font-weight: 700;
++  font-size: clamp(34px, 5vw, 56px);
++  line-height: 1.02;
++  letter-spacing: -0.04em;
++  font-weight: 750;
+ }
+ 
+ .hero-text {
+-  max-width: 58ch;
+-  margin: 16px 0 0;
+-  color: var(--muted);
++  margin: 14px 0 0;
++  max-width: 68ch;
++  color: var(--muted-foreground);
+   line-height: 1.7;
++  font-size: 15px;
++}
++
++.card {
++  border-radius: var(--radius-lg);
++}
++
++.card-header {
++  margin-bottom: 18px;
++}
++
++.card-content {
++  min-width: 0;
++}
++
++.badge {
++  border-radius: 999px;
++}
++
++.badge-outline {
++  border-color: var(--border-strong);
++  background: transparent;
++}
++
++.badge-secondary {
++  background: var(--background-accent);
++}
++
++.tabs-list {
++  background: var(--surface-muted);
++}
++
++.tabs-trigger {
++  border-radius: 8px;
+ }
+ 
+ .status-chip,
+-.plan-badge {
++.plan-badge,
++.status-pill {
+   display: inline-flex;
+   align-items: center;
++  justify-content: center;
+   gap: 10px;
+-  padding: 10px 14px;
++  min-height: 38px;
++  padding: 0 14px;
+   border-radius: 999px;
+-  border: 1px solid var(--line);
+-  background: rgba(255, 255, 255, 0.72);
+-  font-size: 13px;
++  border: 1px solid var(--border);
++  background: var(--surface-muted);
++  color: var(--muted-foreground);
++  font-size: 12px;
+   letter-spacing: 0.08em;
++  text-transform: uppercase;
+ }
+ 
+ .status-chip {
+-  text-transform: uppercase;
+-  letter-spacing: 0.12em;
++  color: var(--foreground);
+ }
+ 
+-.plan-badge {
+-  color: var(--muted);
++.plan-badge strong {
++  color: var(--foreground);
++  font-size: 14px;
+ }
+ 
+-.plan-badge strong {
+-  color: var(--accent-deep);
+-  font-size: 16px;
++.status-pill {
++  border-color: rgba(37, 99, 235, 0.18);
++  background: rgba(37, 99, 235, 0.08);
++  color: #1d4ed8;
+ }
+ 
+ .status-dot {
+-  width: 11px;
+-  height: 11px;
+-  border-radius: 50%;
+-  background: #c7b9a2;
+-  box-shadow: 0 0 0 0 rgba(191, 59, 32, 0.55);
++  width: 10px;
++  height: 10px;
++  border-radius: 999px;
++  background: #cbd5e1;
++  box-shadow: 0 0 0 0 rgba(37, 99, 235, 0.34);
+ }
+ 
+ .status-dot.live {
+-  background: var(--accent);
++  background: #2563eb;
+   animation: pulse 1.8s infinite;
+ }
+ 
++.content-grid {
++  display: grid;
++  grid-template-columns: minmax(0, 1.65fr) minmax(320px, 0.95fr);
++  gap: 20px;
++  align-items: start;
++}
++
++.stack-panel {
++  display: grid;
++  gap: 20px;
++  align-content: start;
++}
++
++.stack-panel-main {
++  min-width: 0;
++}
++
++.panel {
++  padding: 22px;
++  border-radius: 22px;
++  min-width: 0;
++}
++
++.hero-panel {
++  padding: 0;
++  overflow: hidden;
++}
++
++.hero-grid {
++  display: grid;
++  grid-template-columns: minmax(0, 1.15fr) minmax(320px, 0.85fr);
++}
++
++.hero-copy,
++.hero-status {
++  padding: 24px 26px;
++}
++
++.hero-copy {
++  background: var(--surface-muted);
++  border-right: 1px solid var(--border);
++}
++
++.hero-status {
++  background: var(--surface);
++}
++
++.hero-note-grid {
++  display: grid;
++  grid-template-columns: repeat(2, minmax(0, 1fr));
++  gap: 14px;
++  margin-top: 20px;
++}
++
++.hero-note {
++  padding: 16px;
++  border-radius: var(--radius-md);
++  border: 1px solid var(--border);
++  background: var(--surface);
++  box-shadow: var(--shadow-soft);
++}
++
++.hero-note-label {
++  display: inline-block;
++  margin-bottom: 10px;
++  color: var(--muted-foreground);
++  font-size: 11px;
++  letter-spacing: 0.12em;
++  text-transform: uppercase;
++  font-weight: 700;
++}
++
++.hero-note strong {
++  display: block;
++  font-size: 16px;
++  line-height: 1.4;
++}
++
++.hero-note p {
++  margin: 8px 0 0;
++  color: var(--muted-foreground);
++  line-height: 1.6;
++  font-size: 14px;
++}
++
++.hero-status-header {
++  display: flex;
++  justify-content: space-between;
++  gap: 12px;
++  align-items: flex-start;
++  margin-bottom: 12px;
++}
++
++.status-kicker {
++  margin: 0 0 6px;
++  color: var(--muted-foreground);
++  font-size: 11px;
++  text-transform: uppercase;
++  letter-spacing: 0.16em;
++  font-weight: 700;
++}
++
+ .meta-line {
+-  margin: 16px 0 0;
+-  color: var(--muted);
+-  line-height: 1.5;
++  margin: 0;
++  color: var(--muted-foreground);
++  line-height: 1.6;
+   word-break: break-all;
+ }
+ 
++.meta-line + .meta-line {
++  margin-top: 8px;
++}
++
++.meta-line-strong {
++  color: var(--foreground);
++}
++
+ .source-form {
+-  position: relative;
+-  z-index: 1;
+   margin-top: 18px;
+   display: grid;
+   gap: 10px;
+ }
+ 
+-.source-form label {
+-  font-size: 13px;
+-  color: var(--muted);
+-  letter-spacing: 0.08em;
++.source-form label,
++.session-filters label span {
++  color: var(--muted-foreground);
++  font-size: 12px;
+   text-transform: uppercase;
++  letter-spacing: 0.12em;
++  font-weight: 700;
+ }
+ 
+ .source-form-row {
+@@ -181,85 +373,107 @@ h1 {
+ }
+ 
+ .source-form input,
+-.source-form button {
+-  min-height: 44px;
+-  border-radius: 14px;
+-  border: 1px solid var(--line);
+-  font: inherit;
++.source-form button,
++.session-filters input,
++.session-filters select,
++.preset-chip,
++.tab-trigger,
++.session-pagination .secondary-button,
++.session-detail-button {
++  min-height: 42px;
++  border-radius: 12px;
++  border: 1px solid var(--border);
++  transition:
++    border-color 0.18s ease,
++    background 0.18s ease,
++    transform 0.18s ease,
++    box-shadow 0.18s ease,
++    color 0.18s ease;
+ }
+ 
+-.source-form input {
++.source-form input,
++.session-filters input,
++.session-filters select {
+   padding: 0 14px;
+-  background: rgba(255, 255, 255, 0.8);
+-  color: var(--ink);
++  background: #fff;
++  color: var(--foreground);
++  outline: none;
+ }
+ 
+-.source-form button {
+-  padding: 0 16px;
+-  background: var(--accent);
+-  color: #fff6f1;
+-  cursor: pointer;
+-  transition: transform 0.2s ease, background 0.2s ease;
++.source-form input:focus,
++.session-filters input:focus,
++.session-filters select:focus {
++  border-color: rgba(37, 99, 235, 0.38);
++  box-shadow: 0 0 0 4px var(--ring);
+ }
+ 
+-.source-form button:hover {
++.source-form button,
++.tab-trigger.active {
++  background: var(--primary);
++  color: var(--primary-foreground);
++  border-color: rgba(15, 23, 42, 0.14);
++}
++
++.source-form button:hover,
++.tab-trigger:hover,
++.preset-chip:hover,
++.session-pagination .secondary-button:hover,
++.session-detail-button:hover {
+   transform: translateY(-1px);
+ }
+ 
+-.source-form button.secondary-button {
+-  background: rgba(255, 255, 255, 0.7);
+-  color: var(--ink);
++.secondary-button,
++.source-form button.secondary-button,
++.session-pagination .secondary-button,
++.session-detail-button,
++.preset-chip,
++.tab-trigger {
++  background: var(--surface-soft);
++  color: var(--foreground);
+ }
+ 
+ .source-feedback {
+   margin: 0;
+-  color: var(--muted);
++  color: var(--muted-foreground);
+   font-size: 13px;
++  line-height: 1.6;
+ }
+ 
+ .source-feedback.error {
+-  color: var(--accent);
++  color: var(--danger);
+ }
+ 
+ .source-feedback.success {
+-  color: var(--accent-deep);
+-}
+-
+-.dashboard-grid {
+-  display: grid;
+-  grid-template-columns: repeat(12, 1fr);
+-  gap: 20px;
+-}
+-
+-.panel {
+-  padding: 22px;
+-  border-radius: 22px;
+-  min-height: 220px;
+-}
+-
+-.span-12 {
+-  grid-column: span 12;
++  color: var(--success);
+ }
+ 
+ .section-heading {
+   display: flex;
+   justify-content: space-between;
+-  gap: 16px;
++  gap: 14px;
+   align-items: baseline;
+   margin-bottom: 18px;
+ }
+ 
+ .section-heading span {
+-  font-family: "Iowan Old Style", "STSong", serif;
+-  font-size: 28px;
++  font-size: 24px;
++  font-weight: 700;
++  letter-spacing: -0.03em;
+ }
+ 
+ .section-heading small {
+-  color: var(--muted);
++  color: var(--muted-foreground);
++  line-height: 1.5;
++}
++
++.section-heading-stacked {
++  flex-direction: column;
++  align-items: flex-start;
++  gap: 6px;
+ }
+ 
+ .compact-heading span {
+-  font-size: 22px;
++  font-size: 18px;
+ }
+ 
+ .metric-grid {
+@@ -275,59 +489,77 @@ h1 {
+   grid-template-columns: repeat(4, minmax(0, 1fr));
+ }
+ 
++.metric-grid-two {
++  grid-template-columns: repeat(2, minmax(0, 1fr));
++}
++
+ .metric-card {
++  display: flex;
++  flex-direction: column;
++  min-height: 152px;
+   padding: 18px;
+-  min-height: 160px;
+-  border-radius: 18px;
+-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.72), rgba(241, 232, 213, 0.72));
+-  border: 1px solid var(--line);
++  border-radius: var(--radius-lg);
++  border: 1px solid var(--border);
++  background: #ffffff;
++  box-shadow: none;
++}
++
++.accent-card,
++.cost-card {
++  border-color: transparent;
++  color: #eff6ff;
+ }
+ 
+ .accent-card {
+-  background: linear-gradient(180deg, rgba(191, 59, 32, 0.92), rgba(129, 33, 17, 0.92));
+-  color: #fff8f3;
++  background: linear-gradient(180deg, #0f172a 0%, #1e293b 100%);
+ }
+ 
+ .cost-card {
+-  background: linear-gradient(180deg, rgba(27, 83, 102, 0.92), rgba(18, 54, 66, 0.92));
+-  color: #eef7fb;
++  background: linear-gradient(180deg, #0f766e 0%, #115e59 100%);
+ }
+ 
+ .bill-card {
+-  background: linear-gradient(180deg, rgba(239, 233, 222, 0.95), rgba(229, 220, 208, 0.95));
++  background: #f8fafc;
+ }
+ 
+ .metric-label {
+   display: block;
+-  font-size: 12px;
++  font-size: 11px;
++  line-height: 1.4;
+   text-transform: uppercase;
+-  letter-spacing: 0.12em;
++  letter-spacing: 0.14em;
+   color: inherit;
+-  opacity: 0.82;
++  opacity: 0.76;
++  font-weight: 700;
+ }
+ 
+ .metric-value {
+   display: block;
+-  margin-top: 16px;
+-  font-size: clamp(28px, 3vw, 42px);
+-  line-height: 1.05;
++  margin-top: 18px;
++  font-size: clamp(30px, 3vw, 42px);
++  line-height: 1.02;
++  letter-spacing: -0.05em;
++  overflow-wrap: anywhere;
+ }
+ 
+ .metric-value-compact {
+-  font-size: clamp(22px, 2.4vw, 32px);
++  font-size: clamp(20px, 2.3vw, 28px);
+ }
+ 
+ .metric-subvalue {
+-  display: inline-block;
+-  margin-top: 12px;
+-  padding-top: 12px;
+-  border-top: 1px solid rgba(255, 255, 255, 0.22);
++  display: block;
++  margin-top: auto;
++  padding-top: 14px;
++  border-top: 1px solid rgba(255, 255, 255, 0.16);
++  color: inherit;
+   opacity: 0.9;
++  font-size: 13px;
++  line-height: 1.55;
+ }
+ 
+ .metric-subvalue-muted {
+-  color: var(--muted);
+-  border-top-color: rgba(23, 21, 18, 0.12);
++  color: var(--muted-foreground);
++  border-top-color: rgba(148, 163, 184, 0.22);
+ }
+ 
+ .limit-grid {
+@@ -336,46 +568,63 @@ h1 {
+   gap: 14px;
+ }
+ 
++.quota-card,
++.summary-pill,
++.line-chart-card,
++.ledger-panel,
++.pricing-row,
++.openclaw-model-row,
++.cost-row,
++.session-detail-cost-row {
++  background: var(--surface-soft);
++  border: 1px solid var(--border);
++}
++
+ .quota-card {
+-  padding: 16px;
+-  border-radius: 16px;
+-  border: 1px solid var(--line);
+-  background: rgba(255, 255, 255, 0.58);
++  padding: 18px;
++  border-radius: var(--radius-lg);
++  box-shadow: var(--shadow-soft);
+ }
+ 
+ .quota-meta-card {
+-  background: linear-gradient(180deg, rgba(237, 247, 248, 0.8), rgba(229, 237, 238, 0.72));
++  background:
++    linear-gradient(180deg, rgba(219, 234, 254, 0.56), rgba(240, 249, 255, 0.8)),
++    var(--surface-soft);
+ }
+ 
+ .quota-topline {
+   display: flex;
+   justify-content: space-between;
+-  gap: 12px;
++  gap: 10px;
+   align-items: center;
+ }
+ 
++.quota-topline strong {
++  font-size: 24px;
++}
++
+ .quota-bar,
+ .reset-progress-track {
+-  height: 12px;
+-  background: rgba(101, 91, 77, 0.12);
++  height: 10px;
+   border-radius: 999px;
+   overflow: hidden;
++  background: rgba(148, 163, 184, 0.18);
+ }
+ 
+ .quota-bar {
+-  margin: 12px 0 10px;
++  margin: 14px 0 10px;
+ }
+ 
+ .quota-bar > div,
+ .reset-progress-track > div {
+-  width: 0;
+   height: 100%;
++  width: 0;
+   border-radius: inherit;
+-  transition: width 0.45s ease;
++  transition: width 0.35s ease;
+ }
+ 
+ .quota-bar > div {
+-  background: linear-gradient(90deg, var(--accent-soft), var(--accent));
++  background: linear-gradient(90deg, #60a5fa, #2563eb);
+ }
+ 
+ .reset-progress {
+@@ -385,55 +634,67 @@ h1 {
+ }
+ 
+ .reset-progress-track > div {
+-  background: linear-gradient(90deg, rgba(27, 83, 102, 0.25), var(--accent-deep));
++  background: linear-gradient(90deg, rgba(15, 23, 42, 0.72), rgba(37, 99, 235, 0.92));
+ }
+ 
+ .reset-progress-track.stale > div {
+-  background: linear-gradient(90deg, rgba(191, 59, 32, 0.55), rgba(191, 59, 32, 0.9));
++  background: linear-gradient(90deg, rgba(245, 158, 11, 0.8), rgba(217, 119, 6, 0.95));
++}
++
++.reset-progress-meta,
++.quota-meta {
++  color: var(--muted-foreground);
++  font-size: 13px;
++  line-height: 1.6;
+ }
+ 
+ .reset-progress-meta {
+   display: flex;
+   justify-content: space-between;
+   gap: 12px;
+-  color: var(--muted);
+-  font-size: 13px;
+ }
+ 
+ .quota-meta {
+-  color: var(--muted);
+   margin: 8px 0 0;
+ }
+ 
+-.detail-grid {
++.detail-grid,
++.side-detail-grid {
+   display: grid;
+-  grid-template-columns: minmax(0, 1.3fr) minmax(0, 0.9fr);
+   gap: 14px;
+   margin-top: 14px;
+ }
+ 
++.detail-grid {
++  grid-template-columns: minmax(0, 1.2fr) minmax(0, 0.95fr);
++}
++
++.side-detail-grid {
++  grid-template-columns: 1fr;
++}
++
+ .inset-panel {
+   min-height: 0;
+-  background: rgba(255, 255, 255, 0.6);
++  padding: 18px;
++  background: var(--surface-muted);
+   box-shadow: none;
+ }
+ 
+ .cost-breakdown,
+ .pricing-table,
+-.daily-ledger {
++.daily-ledger,
++.session-detail-costs {
+   display: grid;
+   gap: 10px;
+ }
+ 
+ .cost-row {
+   display: grid;
+-  grid-template-columns: minmax(0, 1.2fr) minmax(0, 0.8fr) minmax(0, 0.8fr) minmax(0, 0.8fr);
++  grid-template-columns: minmax(0, 1.2fr) repeat(3, minmax(0, 0.8fr));
+   gap: 12px;
+   align-items: center;
+   padding: 12px 14px;
+-  border-radius: 14px;
+-  background: rgba(245, 244, 240, 0.8);
+-  border: 1px solid var(--line);
++  border-radius: 12px;
+ }
+ 
+ .cost-row.total-row {
+@@ -445,7 +706,7 @@ h1 {
+ }
+ 
+ .cost-meta {
+-  color: var(--muted);
++  color: var(--muted-foreground);
+   font-size: 13px;
+ }
+ 
+@@ -458,70 +719,51 @@ h1 {
+ }
+ 
+ .pricing-head {
+-  color: var(--muted);
+-  font-size: 12px;
++  color: var(--muted-foreground);
++  font-size: 11px;
+   text-transform: uppercase;
+-  letter-spacing: 0.1em;
++  letter-spacing: 0.14em;
++  font-weight: 700;
++  padding: 0 4px;
+ }
+ 
+-.pricing-head-two {
++.pricing-head-two,
++.openclaw-model-row {
+   grid-template-columns: minmax(0, 1.6fr) minmax(0, 0.8fr);
+ }
+ 
+-.pricing-row {
+-  padding: 12px 14px;
+-  border-radius: 12px;
+-  background: rgba(255, 255, 255, 0.62);
+-  border: 1px solid var(--line);
+-}
+-
++.pricing-row,
+ .openclaw-model-row {
+-  display: grid;
+-  grid-template-columns: minmax(0, 1.6fr) minmax(0, 0.8fr);
+-  gap: 12px;
+-  align-items: center;
+   padding: 12px 14px;
+   border-radius: 12px;
+-  background: rgba(255, 255, 255, 0.62);
+-  border: 1px solid var(--line);
+ }
+ 
+ .pricing-source-note {
+   display: block;
+   margin-top: 4px;
+-  color: var(--muted);
++  color: var(--muted-foreground);
+   font-size: 12px;
+ }
+ 
+ .tab-strip {
+   display: inline-grid;
+   grid-template-columns: repeat(2, minmax(0, auto));
+-  gap: 10px;
+-  padding: 6px;
++  gap: 8px;
++  padding: 5px;
+   border-radius: 999px;
+-  background: rgba(255, 255, 255, 0.62);
+-  border: 1px solid var(--line);
++  border: 1px solid var(--border);
++  background: var(--surface-muted);
+ }
+ 
+ .tab-trigger {
+-  min-height: 42px;
+-  padding: 0 18px;
+-  border: 0;
++  min-width: 110px;
++  padding: 0 16px;
+   border-radius: 999px;
+-  background: transparent;
+-  color: var(--muted);
+-  font: inherit;
+   cursor: pointer;
+-  transition: background 0.2s ease, color 0.2s ease, transform 0.2s ease;
+ }
+ 
+ .tab-trigger.active {
+-  background: linear-gradient(135deg, rgba(27, 83, 102, 0.96), rgba(191, 59, 32, 0.88));
+-  color: #fffaf6;
+-}
+-
+-.tab-trigger:hover {
+-  transform: translateY(-1px);
++  box-shadow: none;
+ }
+ 
+ .tab-panel {
+@@ -538,7 +780,7 @@ h1 {
+ }
+ 
+ .compact-strip {
+-  padding: 5px;
++  padding: 4px;
+ }
+ 
+ .preset-strip {
+@@ -550,20 +792,14 @@ h1 {
+ .preset-chip {
+   min-height: 38px;
+   padding: 0 14px;
+-  border-radius: 999px;
+-  border: 1px solid var(--line);
+-  background: rgba(255, 255, 255, 0.7);
+-  color: var(--muted);
+-  font: inherit;
+   cursor: pointer;
+ }
+ 
+-.preset-chip:hover {
+-  color: var(--ink);
+-}
+-
+ .table-scroll {
+   overflow-x: auto;
++  border: 1px solid var(--border);
++  border-radius: 16px;
++  background: rgba(255, 255, 255, 0.72);
+ }
+ 
+ table {
+@@ -574,17 +810,31 @@ table {
+ 
+ th,
+ td {
+-  padding: 12px 8px;
+-  border-bottom: 1px solid var(--line);
++  padding: 13px 10px;
++  border-bottom: 1px solid rgba(148, 163, 184, 0.18);
+   text-align: left;
+   vertical-align: top;
++  overflow-wrap: anywhere;
++}
++
++thead th {
++  position: sticky;
++  top: 0;
++  z-index: 1;
++  background: rgba(248, 250, 252, 0.96);
+ }
+ 
+ th {
+-  font-size: 12px;
++  font-size: 11px;
+   text-transform: uppercase;
+-  letter-spacing: 0.12em;
+-  color: var(--muted);
++  letter-spacing: 0.14em;
++  color: var(--muted-foreground);
++  font-weight: 700;
++}
++
++td {
++  font-size: 14px;
++  line-height: 1.55;
+ }
+ 
+ .thread-title {
+@@ -600,46 +850,97 @@ th {
+ .thread-meta {
+   display: block;
+   margin-top: 4px;
+-  color: var(--muted);
++  color: var(--muted-foreground);
+   font-size: 13px;
+-  word-break: break-all;
++  white-space: nowrap;
++  overflow: hidden;
++  text-overflow: ellipsis;
+ }
+ 
+ .thread-id {
+   display: block;
+-  font-family: "SF Mono", "Menlo", "Monaco", monospace;
+   font-size: 12px;
++  color: var(--muted-foreground);
+   word-break: break-all;
+ }
+ 
++#current-model-name,
++#openclaw-top-model {
++  line-height: 0.92;
++}
++
++.origin-badge {
++  display: inline-flex;
++  align-items: center;
++  min-height: 28px;
++  padding: 0 10px;
++  border-radius: 999px;
++  border: 1px solid var(--border);
++  font-size: 12px;
++  font-weight: 700;
++  white-space: nowrap;
++}
++
++.origin-codex {
++  background: #eff6ff;
++  color: #1d4ed8;
++}
++
++.origin-openclaw {
++  background: #ecfeff;
++  color: #0f766e;
++}
++
++.status-badge {
++  display: inline-flex;
++  align-items: center;
++  min-height: 28px;
++  padding: 0 10px;
++  border-radius: 999px;
++  border: 1px solid var(--border);
++  font-size: 12px;
++  font-weight: 700;
++  letter-spacing: 0.04em;
++}
++
++.status-running {
++  background: rgba(37, 99, 235, 0.08);
++  color: #1d4ed8;
++}
++
++.status-waiting {
++  background: rgba(245, 158, 11, 0.12);
++  color: var(--warning);
++}
++
++.status-done {
++  background: rgba(15, 118, 110, 0.12);
++  color: var(--success);
++}
++
++.status-aborted {
++  background: rgba(185, 28, 28, 0.1);
++  color: var(--danger);
++}
++
+ .session-pagination {
+   display: flex;
+   justify-content: flex-end;
+   align-items: center;
+   gap: 12px;
+   margin-top: 14px;
+-  color: var(--muted);
+-}
+-
+-.session-pagination .secondary-button {
+-  min-height: 38px;
+-  padding: 0 14px;
+-  border-radius: 999px;
+-  border: 1px solid var(--line);
+-  background: rgba(255, 255, 255, 0.7);
+-  color: var(--ink);
+-  font: inherit;
+-  cursor: pointer;
++  color: var(--muted-foreground);
+ }
+ 
+ .session-pagination .secondary-button:disabled {
+-  cursor: default;
+   opacity: 0.45;
++  cursor: default;
++  transform: none;
+ }
+ 
+ .session-filters {
+   display: grid;
+-  grid-template-columns: repeat(3, minmax(0, 1fr));
++  grid-template-columns: repeat(4, minmax(0, 1fr));
+   gap: 12px;
+   margin-bottom: 14px;
+ }
+@@ -647,37 +948,30 @@ th {
+ .session-filters label {
+   display: grid;
+   gap: 8px;
+-  color: var(--muted);
+-  font-size: 13px;
+-}
+-
+-.session-filters input {
+-  min-height: 40px;
+-  border-radius: 12px;
+-  border: 1px solid var(--line);
+-  background: rgba(255, 255, 255, 0.8);
+-  padding: 0 12px;
+-  font: inherit;
+-  color: var(--ink);
+ }
+ 
+ .session-detail-dialog {
+   width: min(720px, calc(100vw - 32px));
+-  border: 1px solid var(--line);
++  border: 1px solid var(--border);
+   border-radius: 20px;
+   padding: 0;
+   box-shadow: var(--shadow);
+-  background: rgba(255, 253, 247, 0.98);
++  background: rgba(255, 255, 255, 0.98);
+ }
+ 
+ .session-detail-dialog::backdrop {
+-  background: rgba(23, 21, 18, 0.24);
++  background: rgba(15, 23, 42, 0.42);
++  backdrop-filter: blur(2px);
+ }
+ 
+ .session-detail-shell {
+   padding: 22px;
+ }
+ 
++.session-detail-shell .session-detail-button {
++  justify-self: end;
++}
++
+ .session-detail-body {
+   display: grid;
+   gap: 10px;
+@@ -691,17 +985,29 @@ th {
+   margin: 0;
+   padding: 14px;
+   border-radius: 14px;
+-  border: 1px solid var(--line);
+-  background: rgba(255, 255, 255, 0.72);
++  border: 1px solid var(--border);
++  background: var(--surface-muted);
+   white-space: pre-wrap;
+   word-break: break-word;
+-  font: inherit;
+-  line-height: 1.6;
++  line-height: 1.65;
+ }
+ 
+-.session-detail-costs {
+-  display: grid;
+-  gap: 10px;
++.prompt-details {
++  border: 1px solid var(--border);
++  border-radius: 12px;
++  background: #fff;
++  padding: 10px 12px;
++}
++
++.prompt-details summary {
++  cursor: pointer;
++  color: var(--muted-foreground);
++  font-size: 13px;
++  font-weight: 600;
++}
++
++.prompt-details pre {
++  margin-top: 10px;
+ }
+ 
+ .session-detail-cost-row {
+@@ -710,14 +1016,41 @@ th {
+   gap: 12px;
+   align-items: center;
+   padding: 12px 14px;
+-  border-radius: 14px;
+-  border: 1px solid var(--line);
+-  background: rgba(255, 255, 255, 0.72);
++  border-radius: 12px;
++}
++
++.session-turn-list {
++  display: grid;
++  gap: 10px;
++}
++
++.session-turn-card,
++.session-turn-empty {
++  border: 1px solid var(--border);
++  border-radius: 12px;
++  background: var(--surface);
++  padding: 12px 14px;
++}
++
++.session-turn-head {
++  display: flex;
++  justify-content: space-between;
++  gap: 12px;
++  align-items: baseline;
++  margin-bottom: 8px;
++  color: var(--muted-foreground);
++  font-size: 12px;
++}
++
++.session-turn-card p {
++  margin: 0;
++  line-height: 1.65;
++  white-space: pre-wrap;
+ }
+ 
+ .empty-state,
+ .empty-row {
+-  color: var(--muted);
++  color: var(--muted-foreground);
+ }
+ 
+ .daily-chart-summary {
+@@ -732,57 +1065,62 @@ th {
+ }
+ 
+ .summary-pill {
+-  padding: 12px 14px;
++  padding: 14px 16px;
+   border-radius: 14px;
+-  background: rgba(255, 255, 255, 0.65);
+-  border: 1px solid var(--line);
+ }
+ 
+ .summary-pill span {
+   display: block;
+-  color: var(--muted);
+-  font-size: 12px;
++  color: var(--muted-foreground);
++  font-size: 11px;
+   text-transform: uppercase;
+-  letter-spacing: 0.1em;
++  letter-spacing: 0.14em;
++  font-weight: 700;
+ }
+ 
+ .summary-pill strong {
+   display: block;
+   margin-top: 8px;
+   font-size: 24px;
++  letter-spacing: -0.04em;
+ }
+ 
+ .line-chart-card {
+   padding: 14px;
+   border-radius: 16px;
+-  background: rgba(255, 255, 255, 0.45);
+-  border: 1px solid var(--line);
+ }
+ 
+ .combined-chart-card {
+   margin-bottom: 14px;
+ }
+ 
+-.chart-card-head {
++.chart-card-head,
++.range-panel-head,
++.ledger-heading {
+   display: flex;
+   justify-content: space-between;
+   gap: 12px;
+   align-items: baseline;
+-  margin-bottom: 10px;
+   flex-wrap: wrap;
+ }
+ 
+-.chart-card-head small {
+-  color: var(--muted);
+-  font-size: 13px;
++.chart-card-head {
++  margin-bottom: 10px;
++}
++
++.chart-card-head small,
++.range-panel-head,
++.chart-legend,
++.chart-brush {
++  color: var(--muted-foreground);
+ }
+ 
+ .line-chart-shell {
+   position: relative;
+   padding: 14px;
+   border-radius: 16px;
+-  background: rgba(255, 255, 255, 0.62);
+-  border: 1px solid var(--line);
++  background: #ffffff;
++  border: 1px solid var(--border);
+ }
+ 
+ .line-chart {
+@@ -805,7 +1143,6 @@ th {
+ .chart-y-axis {
+   display: grid;
+   align-content: space-between;
+-  color: var(--muted);
+   font-size: 12px;
+ }
+ 
+@@ -818,35 +1155,35 @@ th {
+ }
+ 
+ .chart-axis {
+-  stroke: rgba(23, 21, 18, 0.15);
++  stroke: rgba(148, 163, 184, 0.3);
+   stroke-width: 1;
+ }
+ 
+ .chart-axis-mid {
+-  stroke-dasharray: 2 2;
++  stroke-dasharray: 3 3;
+ }
+ 
+ .chart-line {
+   fill: none;
+-  stroke-width: 2.6;
++  stroke-width: 2.4;
+   stroke-linejoin: round;
+   stroke-linecap: round;
+ }
+ 
+-.chart-line-token {
+-  stroke: #1f6071;
+-}
+-
+-.chart-line-cost {
+-  stroke: #bf3b20;
+-}
+-
+-.chart-point-token {
+-  fill: #1f6071;
++.chart-line-token,
++.chart-point-token,
++.chart-legend-token {
++  stroke: #1d4ed8;
++  fill: #1d4ed8;
++  color: #1d4ed8;
+ }
+ 
+-.chart-point-cost {
+-  fill: #bf3b20;
++.chart-line-cost,
++.chart-point-cost,
++.chart-legend-cost {
++  stroke: #0f766e;
++  fill: #0f766e;
++  color: #0f766e;
+ }
+ 
+ .chart-hover-grid {
+@@ -860,8 +1197,6 @@ th {
+   bottom: 0;
+   width: 22px;
+   transform: translateX(-50%);
+-  border: 0;
+-  padding: 0;
+   background: transparent;
+   cursor: crosshair;
+ }
+@@ -873,12 +1208,13 @@ th {
+   min-width: 180px;
+   padding: 10px 12px;
+   border-radius: 14px;
+-  background: rgba(23, 21, 18, 0.9);
+-  color: #fffdf8;
++  background: rgba(15, 23, 42, 0.92);
++  color: #f8fafc;
+   opacity: 0;
+   pointer-events: none;
+   transform: translateY(4px);
+   transition: opacity 0.18s ease, transform 0.18s ease;
++  box-shadow: 0 14px 24px rgba(15, 23, 42, 0.24);
+ }
+ 
+ .chart-tooltip.visible {
+@@ -893,17 +1229,20 @@ th {
+ 
+ .chart-tooltip span {
+   margin-top: 4px;
+-  color: rgba(255, 253, 248, 0.78);
++  color: rgba(248, 250, 252, 0.76);
+ }
+ 
+-.chart-legend {
++.chart-legend,
++.chart-brush {
+   display: flex;
+   justify-content: space-between;
+   gap: 12px;
+-  margin-top: 10px;
+-  color: var(--muted);
+-  font-size: 13px;
+   flex-wrap: wrap;
++  font-size: 13px;
++}
++
++.chart-legend {
++  margin-top: 10px;
+ }
+ 
+ .chart-legend-key {
+@@ -920,36 +1259,15 @@ th {
+   background: currentColor;
+ }
+ 
+-.chart-legend-token {
+-  color: #1f6071;
+-}
+-
+-.chart-legend-cost {
+-  color: #bf3b20;
+-}
+-
+ .chart-brush {
+-  display: flex;
+-  justify-content: space-between;
+-  gap: 12px;
+   margin-top: 8px;
+-  color: var(--muted);
+   font-size: 12px;
+ }
+ 
+ .range-panel {
+   margin-top: 14px;
+   padding-top: 14px;
+-  border-top: 1px solid var(--line);
+-}
+-
+-.range-panel-head {
+-  display: flex;
+-  justify-content: space-between;
+-  gap: 12px;
+-  align-items: center;
+-  margin-bottom: 10px;
+-  color: var(--muted);
++  border-top: 1px solid rgba(148, 163, 184, 0.22);
+ }
+ 
+ .range-track {
+@@ -968,13 +1286,13 @@ th {
+ 
+ .range-track-base {
+   inset: 0;
+-  background: rgba(23, 21, 18, 0.08);
++  background: rgba(148, 163, 184, 0.18);
+ }
+ 
+ .range-track-selection {
+   left: 0;
+   width: 0;
+-  background: linear-gradient(90deg, rgba(31, 96, 113, 0.88), rgba(191, 59, 32, 0.88));
++  background: linear-gradient(90deg, #1d4ed8, #0f766e);
+ }
+ 
+ .range-inputs {
+@@ -998,8 +1316,8 @@ th {
+   height: 18px;
+   border-radius: 50%;
+   background: #fff;
+-  border: 2px solid var(--accent-deep);
+-  box-shadow: 0 3px 10px rgba(23, 21, 18, 0.18);
++  border: 2px solid #1d4ed8;
++  box-shadow: 0 3px 12px rgba(15, 23, 42, 0.18);
+   pointer-events: auto;
+   -webkit-appearance: none;
+ }
+@@ -1009,17 +1327,30 @@ th {
+   height: 18px;
+   border-radius: 50%;
+   background: #fff;
+-  border: 2px solid var(--accent-deep);
+-  box-shadow: 0 3px 10px rgba(23, 21, 18, 0.18);
++  border: 2px solid #1d4ed8;
++  box-shadow: 0 3px 12px rgba(15, 23, 42, 0.18);
+   pointer-events: auto;
+ }
+ 
+ .ledger-panel {
+   margin-top: 14px;
++  padding: 14px;
++  border-radius: 16px;
+ }
+ 
+-.ledger-heading {
+-  margin-bottom: 10px;
++.compact-table-scroll {
++  border: 0;
++  background: transparent;
++}
++
++.compact-table {
++  table-layout: auto;
++}
++
++.compact-table td:last-child,
++.compact-table th:last-child {
++  text-align: right;
++  white-space: nowrap;
+ }
+ 
+ .billing-table td:nth-child(2),
+@@ -1029,56 +1360,111 @@ th {
+   text-align: right;
+ }
+ 
+-.ledger-row {
+-  display: grid;
+-  grid-template-columns: 1fr auto auto;
+-  gap: 12px;
+-  align-items: center;
+-  padding: 10px 12px;
+-  border-radius: 12px;
+-  background: rgba(255, 255, 255, 0.62);
+-  border: 1px solid var(--line);
++.side-panel {
++  position: sticky;
++  top: 24px;
+ }
+ 
+ @keyframes pulse {
+   0% {
+-    box-shadow: 0 0 0 0 rgba(191, 59, 32, 0.45);
++    box-shadow: 0 0 0 0 rgba(37, 99, 235, 0.34);
+   }
+   70% {
+-    box-shadow: 0 0 0 12px rgba(191, 59, 32, 0);
++    box-shadow: 0 0 0 11px rgba(37, 99, 235, 0);
+   }
+   100% {
+-    box-shadow: 0 0 0 0 rgba(191, 59, 32, 0);
++    box-shadow: 0 0 0 0 rgba(37, 99, 235, 0);
+   }
+ }
+ 
+-@media (max-width: 1080px) {
++@media (max-width: 1280px) {
+   .metric-grid-five,
+-  .metric-grid-four,
+-  .limit-grid,
+-  .detail-grid {
++  .metric-grid-four {
++    grid-template-columns: repeat(2, minmax(0, 1fr));
++  }
++}
++
++@media (max-width: 1180px) {
++  .content-grid,
++  .hero-grid,
++  .detail-grid,
++  .limit-grid {
+     grid-template-columns: 1fr;
+   }
+ 
+-  .billing-summary-grid {
+-    grid-template-columns: repeat(2, minmax(0, 1fr));
++  .hero-copy {
++    border-right: 0;
++    border-bottom: 1px solid var(--border);
++  }
++
++  .side-panel {
++    position: static;
+   }
+ }
+ 
+-@media (max-width: 980px) {
+-  .hero,
+-  .dashboard-grid {
++@media (max-width: 900px) {
++  .topbar-card {
++    flex-direction: column;
++  }
++
++  .metric-grid-two,
++  .billing-summary-grid {
++    grid-template-columns: 1fr;
++  }
++
++  .hero-note-grid {
+     grid-template-columns: 1fr;
+   }
+ 
+-  .span-12 {
+-    grid-column: auto;
++  .source-panel-tabs {
++    display: grid;
++    grid-template-columns: repeat(2, minmax(0, 1fr));
++    gap: 8px;
++    margin-bottom: 16px;
++  }
++
++  .content-grid {
++    display: block;
++  }
++
++  .source-panel {
++    display: none;
++  }
++
++  .source-panel.active {
++    display: grid;
++  }
++
++  .session-filters {
++    grid-template-columns: repeat(2, minmax(0, 1fr));
+   }
+ }
+ 
+-@media (max-width: 720px) {
+-  .page-shell {
+-    padding: 20px 14px 32px;
++@media (max-width: 760px) {
++  .workspace-shell {
++    padding: 18px 14px 28px;
++  }
++
++  .topbar-card,
++  .panel,
++  .hero-copy,
++  .hero-status {
++    padding: 14px;
++  }
++
++  .metric-card {
++    min-height: 124px;
++    padding: 14px;
++  }
++
++  .metric-value {
++    margin-top: 14px;
++    font-size: clamp(22px, 10vw, 34px);
++  }
++
++  .metric-subvalue {
++    padding-top: 10px;
++    font-size: 12px;
+   }
+ 
+   .source-form-row,
+@@ -1088,11 +1474,7 @@ th {
+   .pricing-row,
+   .openclaw-model-row,
+   .daily-chart-summary,
+-  .ledger-row {
+-    grid-template-columns: 1fr;
+-  }
+-
+-  .session-filters {
++  .session-detail-cost-row {
+     grid-template-columns: 1fr;
+   }
+ 
+@@ -1100,17 +1482,45 @@ th {
+     grid-template-columns: 1fr;
+   }
+ 
+-  .chart-y-axis-cost,
+-  .chart-y-axis-token {
++  .chart-y-axis-token,
++  .chart-y-axis-cost {
+     display: none;
+   }
+ 
+   .tab-strip {
+-    display: grid;
+     width: 100%;
++    display: grid;
++  }
++
++  .tab-trigger {
++    min-width: 0;
+   }
+ 
+   table {
+-    min-width: 720px;
++    min-width: 640px;
++  }
++}
++
++@media (max-width: 520px) {
++  .session-filters,
++  .billing-summary-grid {
++    grid-template-columns: 1fr;
++  }
++
++  .metric-grid-five,
++  .metric-grid-four,
++  .metric-grid-two {
++    grid-template-columns: repeat(2, minmax(0, 1fr));
++  }
++
++  .section-heading span {
++    font-size: 20px;
++  }
++
++  .topbar-card,
++  .panel,
++  .hero-copy,
++  .hero-status {
++    padding: 12px;
+   }
+ }
+diff --git a/server/lib/liveSnapshotService.js b/server/lib/liveSnapshotService.js
+index 29a6331..01a49c4 100644
+--- a/server/lib/liveSnapshotService.js
++++ b/server/lib/liveSnapshotService.js
+@@ -13,6 +13,7 @@ function createLiveSnapshotService(options = {}) {
+   let latestSnapshot = createPlaceholderSnapshot();
+   let warmupScheduled = false;
+   let fullRefreshScheduled = false;
++  let snapshotGeneration = 0;
+ 
+   function createPlaceholderSnapshot() {
+     return {
+@@ -49,36 +50,44 @@ function createLiveSnapshotService(options = {}) {
+     }
+   }
+ 
+-  async function loadFastSnapshot() {
++  async function loadFastSnapshot(generation = snapshotGeneration) {
+     const snapshot = await loadSnapshotFn({
+       ...runtimeOptions,
+       skipSessionParsing: true,
+     });
++    if (generation !== snapshotGeneration) {
++      return latestSnapshot;
++    }
++
+     latestSnapshot = { ...snapshot, loading: true };
+     emitSnapshot(latestSnapshot);
+     return latestSnapshot;
+   }
+ 
+-  async function refresh() {
++  async function refresh(generation = snapshotGeneration) {
+     latestSnapshotPromise = loadSnapshotInBackgroundFn({
+       ...runtimeOptions,
+       recentSessionFileLimit: runtimeOptions.recentSessionFileLimit || 40,
+       ledgerFileLimit: runtimeOptions.ledgerFileLimit || 217,
+     });
+     const snapshot = await latestSnapshotPromise;
++    if (generation !== snapshotGeneration) {
++      return latestSnapshot;
++    }
++
+     latestSnapshot = { ...snapshot, loading: false };
+     emitSnapshot(latestSnapshot);
+     return latestSnapshot;
+   }
+ 
+-  function scheduleBackgroundRefresh() {
++  function scheduleBackgroundRefresh(generation = snapshotGeneration) {
+     if (fullRefreshScheduled) {
+       return;
+     }
+ 
+     fullRefreshScheduled = true;
+     setTimeout(() => {
+-      refresh().catch(() => {});
++      refresh(generation).catch(() => {});
+     }, 0);
+   }
+ 
+@@ -90,15 +99,19 @@ function createLiveSnapshotService(options = {}) {
+     warmupScheduled = true;
+     latestSnapshot = latestSnapshot || createPlaceholderSnapshot();
+ 
++    const generation = snapshotGeneration;
++
+     setTimeout(async () => {
+       try {
+-        latestSnapshotPromise = loadFastSnapshot();
++        latestSnapshotPromise = loadFastSnapshot(generation);
+         await latestSnapshotPromise;
+       } catch {
+-        latestSnapshot = createPlaceholderSnapshot();
++        if (generation === snapshotGeneration) {
++          latestSnapshot = createPlaceholderSnapshot();
++        }
+       } finally {
+         latestSnapshotPromise = null;
+-        scheduleBackgroundRefresh();
++        scheduleBackgroundRefresh(generation);
+       }
+     }, 0);
+   }
+@@ -127,6 +140,7 @@ function createLiveSnapshotService(options = {}) {
+   }
+ 
+   async function setCodexHome(codexHome) {
++    snapshotGeneration += 1;
+     runtimeOptions.codexHome = codexHome;
+     latestSnapshotPromise = null;
+     latestSnapshot = createPlaceholderSnapshot();
+diff --git a/server/lib/usageRepository.js b/server/lib/usageRepository.js
+index 85c0682..2a61a6c 100644
+--- a/server/lib/usageRepository.js
++++ b/server/lib/usageRepository.js
+@@ -47,6 +47,7 @@ function getRecentThreads(stateDbPath, limit = null) {
+     `
+       SELECT
+         id,
++        source,
+         title,
+         cwd,
+         model_provider,
+@@ -61,6 +62,7 @@ function getRecentThreads(stateDbPath, limit = null) {
+ 
+   return rows.map((row) => ({
+     id: row.id,
++    source: row.source,
+     title: row.title,
+     cwd: row.cwd,
+     modelProvider: row.model_provider,
+@@ -70,6 +72,60 @@ function getRecentThreads(stateDbPath, limit = null) {
+   }));
+ }
+ 
++function normalizeInlineText(value) {
++  return String(value || "").replace(/\s+/g, " ").trim();
++}
++
++function summarizeTitle(value, maxLength = 80) {
++  const normalized = normalizeInlineText(value);
++  if (!normalized) {
++    return "";
++  }
++
++  if (normalized.length <= maxLength) {
++    return normalized;
++  }
++
++  return `${normalized.slice(0, Math.max(0, maxLength - 3)).trimEnd()}...`;
++}
++
++function formatWorkspaceLabel(cwd) {
++  const normalized = String(cwd || "").trim();
++  if (!normalized) {
++    return "-";
++  }
++
++  const basename = path.basename(normalized) || normalized;
++  if (normalized.includes("/.openclaw/")) {
++    return `${basename} · ~/.openclaw`;
++  }
++
++  return basename;
++}
++
++function classifyUsageOrigin({ cwd, source }) {
++  const normalizedCwd = String(cwd || "").trim();
++  const normalizedSource = String(source || "").trim().toLowerCase();
++
++  if (
++    normalizedCwd.includes("/.openclaw/") ||
++    normalizedCwd.includes("\\.openclaw\\") ||
++    normalizedSource === "oauth"
++  ) {
++    return {
++      kind: "openclaw-oauth",
++      label: "OpenClaw / OAuth",
++      description: "通过 OpenClaw 工作区触发，底层仍消耗 Codex token",
++    };
++  }
++
++  return {
++    kind: "codex-local",
++    label: "Codex 本地",
++    description: "直接来自 ~/.codex 的本地线程与会话日志",
++  };
++}
++
+ function getDailyUsage(stateDbPath, days = 14) {
+   const rows = runSqliteJson(
+     stateDbPath,
+@@ -217,6 +273,32 @@ function getThreadIdFromFilePath(filePath) {
+   return match ? match[1] : basename;
+ }
+ 
++function normalizeSessionStatus(statusType) {
++  if (statusType === "task_complete") {
++    return "已完结";
++  }
++
++  if (statusType === "turn_aborted") {
++    return "已中断";
++  }
++
++  if (statusType === "user_message" || statusType === "task_started") {
++    return "等待回答";
++  }
++
++  if (
++    statusType === "agent_message" ||
++    statusType === "token_count" ||
++    statusType === "reasoning" ||
++    statusType === "function_call" ||
++    statusType === "function_call_output"
++  ) {
++    return "进行中";
++  }
++
++  return null;
++}
++
+ function extractSessionDetails(filePath, options = {}) {
+   const content = fs.readFileSync(filePath, "utf8");
+   const lines = content.split("\n").filter(Boolean);
+@@ -234,6 +316,9 @@ function extractSessionDetails(filePath, options = {}) {
+     modelAt: null,
+     promptText: null,
+     promptAt: null,
++    userMessages: [],
++    statusLabel: null,
++    statusAt: null,
+     ledgerEntries: [],
+     modelsUsed: [],
+   };
+@@ -271,7 +356,13 @@ function extractSessionDetails(filePath, options = {}) {
+         details.promptText = promptText;
+         details.promptAt = parsed.timestamp || details.promptAt;
+         details.latestTimestamp = parsed.timestamp || details.latestTimestamp;
++        details.userMessages.push({
++          timestamp: parsed.timestamp || null,
++          text: promptText,
++        });
+       }
++      details.statusLabel = normalizeSessionStatus("user_message") || details.statusLabel;
++      details.statusAt = parsed.timestamp || details.statusAt;
+       continue;
+     }
+ 
+@@ -293,6 +384,25 @@ function extractSessionDetails(filePath, options = {}) {
+           cost,
+         });
+       }
++      details.statusLabel = normalizeSessionStatus("token_count") || details.statusLabel;
++      details.statusAt = parsed.timestamp || details.statusAt;
++      continue;
++    }
++
++    if (parsed.type === "event_msg" && (parsed.payload?.type === "task_complete" || parsed.payload?.type === "task_started" || parsed.payload?.type === "agent_message" || parsed.payload?.type === "turn_aborted")) {
++      details.statusLabel = normalizeSessionStatus(parsed.payload.type) || details.statusLabel;
++      details.statusAt = parsed.timestamp || details.statusAt;
++      details.latestTimestamp = parsed.timestamp || details.latestTimestamp;
++      continue;
++    }
++
++    if (parsed.type === "response_item") {
++      const responseStatus = normalizeSessionStatus(parsed.payload?.type);
++      if (responseStatus) {
++        details.statusLabel = responseStatus;
++        details.statusAt = parsed.timestamp || details.statusAt;
++        details.latestTimestamp = parsed.timestamp || details.latestTimestamp;
++      }
+     }
+   }
+ 
+@@ -300,7 +410,13 @@ function extractSessionDetails(filePath, options = {}) {
+   details.cost = estimateCost(details.tokenUsage, details.modelName);
+   details.modelsUsed = Array.from(modelSet);
+ 
+-  if (!details.tokenUsage && !details.rateLimits && !details.modelName) {
++  if (
++    !details.tokenUsage &&
++    !details.rateLimits &&
++    !details.modelName &&
++    !details.promptText &&
++    !details.statusLabel
++  ) {
+     return null;
+   }
+ 
+@@ -322,6 +438,21 @@ function mergeSessionDetails(existing, incoming) {
+   const incomingModelTime = new Date(incoming.modelAt || 0).getTime();
+   const existingPromptTime = new Date(existing.promptAt || 0).getTime();
+   const incomingPromptTime = new Date(incoming.promptAt || 0).getTime();
++  const existingStatusTime = new Date(existing.statusAt || 0).getTime();
++  const incomingStatusTime = new Date(incoming.statusAt || 0).getTime();
++  const mergedUserMessages = [
++    ...(existing.userMessages || []),
++    ...(incoming.userMessages || []),
++  ]
++    .filter((message) => message?.text)
++    .sort(
++      (left, right) =>
++        new Date(left.timestamp || 0).getTime() - new Date(right.timestamp || 0).getTime()
++    )
++    .filter((message, index, rows) => {
++      const key = `${message.timestamp || ""}:${message.text}`;
++      return rows.findIndex((candidate) => `${candidate.timestamp || ""}:${candidate.text}` === key) === index;
++    });
+   const merged = {
+     ...existing,
+     ...incoming,
+@@ -358,6 +489,15 @@ function mergeSessionDetails(existing, incoming) {
+       incoming.promptText && incomingPromptTime >= existingPromptTime
+         ? incoming.promptAt
+         : existing.promptAt,
++    userMessages: mergedUserMessages,
++    statusLabel:
++      incoming.statusLabel && incomingStatusTime >= existingStatusTime
++        ? incoming.statusLabel
++        : existing.statusLabel,
++    statusAt:
++      incoming.statusLabel && incomingStatusTime >= existingStatusTime
++        ? incoming.statusAt
++        : existing.statusAt,
+   };
+ 
+   merged.cost = estimateCost(merged.tokenUsage, merged.modelName);
+@@ -463,6 +603,7 @@ function getLatestLiveEvent(sessionMap) {
+   return {
+     currentSession: latestTokenUsage
+       ? {
++          threadId: latestTokenUsage.threadId,
+           timestamp: latestTokenUsage.latestTimestamp,
+           filePath: latestTokenUsage.filePath,
+           tokenUsage: latestTokenUsage.tokenUsage,
+@@ -512,16 +653,28 @@ async function loadSnapshot(options = {}) {
+   const recentThreads = getRecentThreads(paths.stateDbPath, options.recentThreadsLimit).map(
+     (thread) => {
+       const sessionDetails = recentSessionMap.get(thread.id);
++      const usageOrigin = classifyUsageOrigin(thread);
+       return {
+         ...thread,
++        titlePreview: summarizeTitle(thread.title),
++        workspaceLabel: formatWorkspaceLabel(thread.cwd),
++        usageOrigin: usageOrigin.kind,
++        usageOriginLabel: usageOrigin.label,
++        usageOriginDescription: usageOrigin.description,
+         modelName: sessionDetails?.modelName || null,
+         promptText: sessionDetails?.promptText || null,
++        userMessages: sessionDetails?.userMessages || [],
++        statusLabel: sessionDetails?.statusLabel || "未知",
+         tokenUsage: sessionDetails?.tokenUsage || null,
+         cost: sessionDetails?.cost || null,
+       };
+     }
+   );
++  const threadsById = new Map(recentThreads.map((thread) => [thread.id, thread]));
+   const dailyUsage = getDailyUsage(paths.stateDbPath, options.dailyUsageLimit || 14);
++  const liveThread = latestLiveEvent.currentSession?.threadId
++    ? threadsById.get(latestLiveEvent.currentSession.threadId)
++    : null;
+ 
+   return {
+     generatedAt: (options.now || new Date()).toISOString(),
+@@ -538,10 +691,12 @@ async function loadSnapshot(options = {}) {
+     live: {
+       currentSession: latestLiveEvent.currentSession
+         ? {
+-            ...latestLiveEvent.currentSession.tokenUsage,
+-            modelName: latestLiveEvent.currentSession.modelName,
+-            cost: latestLiveEvent.currentSession.cost,
+-          }
++          ...latestLiveEvent.currentSession.tokenUsage,
++          modelName: latestLiveEvent.currentSession.modelName,
++          cost: latestLiveEvent.currentSession.cost,
++          usageOrigin: liveThread?.usageOrigin || "codex-local",
++          usageOriginLabel: liveThread?.usageOriginLabel || "Codex 本地",
++        }
+         : null,
+       rateLimits: latestLiveEvent.rateLimits?.rateLimits || null,
+       latestEventAt: latestLiveEvent.currentSession?.timestamp || null,
+@@ -555,6 +710,7 @@ async function loadSnapshot(options = {}) {
+ }
+ 
+ module.exports = {
++  classifyUsageOrigin,
+   loadSnapshot,
+   normalizeTokenUsage,
+   normalizeRateLimits,
+diff --git a/test/app.test.js b/test/app.test.js
+index 7dddc93..9411374 100644
+--- a/test/app.test.js
++++ b/test/app.test.js
+@@ -169,7 +169,11 @@ test("snapshot endpoint returns normalized JSON and stream endpoint exposes SSE"
+     assert.match(pageHtml, /按标题筛选/);
+     assert.match(pageHtml, /按模型筛选/);
+     assert.match(pageHtml, /创建日期/);
++    assert.match(pageHtml, /来源筛选/);
++    assert.match(pageHtml, /状态/);
++    assert.match(pageHtml, /OpenClaw \/ OAuth/);
+     assert.match(pageHtml, /Codex用量统计/);
++    assert.doesNotMatch(pageHtml, /按 shadcn\/ui 文档里的 Card/);
+ 
+     const assetResponse = await fetch(`http://127.0.0.1:${port}/app.js`);
+     assert.equal(assetResponse.status, 200);
+diff --git a/test/dashboardView.test.js b/test/dashboardView.test.js
+index 0f31c73..1ab7219 100644
+--- a/test/dashboardView.test.js
++++ b/test/dashboardView.test.js
+@@ -1,5 +1,7 @@
+ const test = require("node:test");
+ const assert = require("node:assert/strict");
++const fs = require("node:fs");
++const path = require("node:path");
+ 
+ const {
+   buildOpenClawModelTableMarkup,
+@@ -18,6 +20,8 @@ const {
+   getFilteredSessionRows,
+   getSessionPageRows,
+   getSessionPageCount,
++  shouldCloseDialogFromBackdropClick,
++  summarizePromptText,
+ } = require("../public/app.js");
+ const { estimateCost } = require("../server/lib/pricing");
+ 
+@@ -136,12 +140,27 @@ test("session filters match title, model, and created date together", () => {
+   assert.deepEqual(filtered.map((row) => row.id), ["thread-2"]);
+ });
+ 
++test("session filters can distinguish codex local rows from openclaw oauth rows", () => {
++  const rows = [
++    { id: "thread-1", title: "local", modelName: "gpt-5.4", createdAt: 1772940000, usageOrigin: "codex-local" },
++    { id: "thread-2", title: "oauth", modelName: "gpt-5.4", createdAt: 1772943600, usageOrigin: "openclaw-oauth" },
++  ];
++
++  const filtered = getFilteredSessionRows(rows, {
++    origin: "openclaw-oauth",
++  });
++
++  assert.deepEqual(filtered.map((row) => row.id), ["thread-2"]);
++});
++
+ test("openclaw model table markup renders model costs and fallback source state", () => {
+   const markup = buildOpenClawModelTableMarkup([
+     { modelName: "gpt-5", totalUsd: 24.52151025 },
+     { modelName: "gpt-5.3-codex", totalUsd: 4.31679775 },
+   ]);
+ 
++  assert.match(markup, /<table/);
++  assert.match(markup, /<td>gpt-5<\/td>/);
+   assert.match(markup, /gpt-5\.3-codex/);
+   assert.match(markup, /\$24\.52/);
+   assert.match(markup, /模型/);
+@@ -174,3 +193,29 @@ test("billable input tokens exclude cached input tokens", () => {
+     360000
+   );
+ });
++
++test("dialog closes when the backdrop itself is clicked", () => {
++  const dialog = { nodeName: "DIALOG" };
++  assert.equal(shouldCloseDialogFromBackdropClick(dialog, dialog), true);
++  assert.equal(shouldCloseDialogFromBackdropClick(dialog, { nodeName: "DIV" }), false);
++});
++
++test("prompt summaries collapse whitespace and trim long prompts", () => {
++  assert.equal(summarizePromptText("  第一行\n\n第二行  ", 20), "第一行 第二行");
++  assert.equal(
++    summarizePromptText("这是一个很长的提示词，用来验证前端会先展示摘要而不是整段直接撑开布局。", 18),
++    "这是一个很长的提示词，用来验证..."
++  );
++});
++
++test("dashboard html exposes the refactored shadcn-style shell structure", () => {
++  const html = fs.readFileSync(path.join(__dirname, "..", "public", "index.html"), "utf8");
++
++  assert.match(html, /class="workspace-shell"/);
++  assert.match(html, /class="topbar-card[^"]*"/);
++  assert.match(html, /class="hero-grid"/);
++  assert.match(html, /class="content-grid"/);
++  assert.match(html, /class="stack-panel stack-panel-main[^"]*"/);
++  assert.match(html, /来源筛选/);
++  assert.match(html, /OpenClaw \/ OAuth/);
++});
+diff --git a/test/usageRepository.test.js b/test/usageRepository.test.js
+index cabfcbd..c6afb43 100644
+--- a/test/usageRepository.test.js
++++ b/test/usageRepository.test.js
+@@ -5,7 +5,11 @@ const os = require("node:os");
+ const path = require("node:path");
+ const { execFileSync } = require("node:child_process");
+ 
+-const { loadSnapshot } = require("../server/lib/usageRepository");
++const {
++  classifyUsageOrigin,
++  extractSessionDetails,
++  loadSnapshot,
++} = require("../server/lib/usageRepository");
+ const { buildPricingCatalog } = require("../server/lib/pricing");
+ 
+ function writeJsonl(filePath, rows) {
+@@ -174,6 +178,13 @@ test("loadSnapshot aggregates sqlite history and latest live token/rate-limit ev
+           rate_limits: null,
+         },
+       },
++      {
++        timestamp: "2026-03-08T04:05:02.000Z",
++        type: "event_msg",
++        payload: {
++          type: "task_complete",
++        },
++      },
+     ]
+   );
+ 
+@@ -196,6 +207,7 @@ test("loadSnapshot aggregates sqlite history and latest live token/rate-limit ev
+   assert.equal(snapshot.recentThreads[0].id, "thread-2");
+   assert.equal(snapshot.recentThreads[0].modelName, "gpt-5-codex");
+   assert.equal(snapshot.recentThreads[0].promptText, "请把模型价格表按相同价格合并展示");
++  assert.equal(snapshot.recentThreads[0].statusLabel, "已完结");
+   assert.equal(snapshot.dailyUsage[0].totalTokens, 4600);
+   assert.equal(snapshot.dailyLedger[0].totalTokens, 630);
+   assert.ok(Math.abs(snapshot.dailyLedger[0].totalUsd - 0.0016775) < 0.000001);
+@@ -203,6 +215,133 @@ test("loadSnapshot aggregates sqlite history and latest live token/rate-limit ev
+   assert.equal(snapshot.pricingCatalog[0].inputPerMillion, 1.25);
+ });
+ 
++test("loadSnapshot derives session status from latest lifecycle event", async () => {
++  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "codex-status-"));
++  const codexHome = path.join(tempDir, ".codex");
++  const dbPath = path.join(codexHome, "state_5.sqlite");
++  fs.mkdirSync(path.dirname(dbPath), { recursive: true });
++  execFileSync("sqlite3", [
++    dbPath,
++    `
++      CREATE TABLE threads (
++        id TEXT PRIMARY KEY,
++        rollout_path TEXT NOT NULL,
++        created_at INTEGER NOT NULL,
++        updated_at INTEGER NOT NULL,
++        source TEXT NOT NULL,
++        model_provider TEXT NOT NULL,
++        cwd TEXT NOT NULL,
++        title TEXT NOT NULL,
++        sandbox_policy TEXT NOT NULL,
++        approval_mode TEXT NOT NULL,
++        tokens_used INTEGER NOT NULL DEFAULT 0,
++        has_user_event INTEGER NOT NULL DEFAULT 0,
++        archived INTEGER NOT NULL DEFAULT 0,
++        archived_at INTEGER
++      );
++      INSERT INTO threads (
++        id, rollout_path, created_at, updated_at, source, model_provider, cwd, title,
++        sandbox_policy, approval_mode, tokens_used, has_user_event, archived, archived_at
++      ) VALUES
++        ('thread-1', '/tmp/1.jsonl', 1773018000, 1773018060, 'vscode', 'openai', '/workspace/a', 'waiting', 'danger', 'never', 100, 1, 0, NULL),
++        ('thread-2', '/tmp/2.jsonl', 1773018000, 1773018120, 'vscode', 'openai', '/workspace/b', 'running', 'danger', 'never', 100, 1, 0, NULL),
++        ('thread-3', '/tmp/3.jsonl', 1773018000, 1773018180, 'vscode', 'openai', '/workspace/c', 'done', 'danger', 'never', 100, 1, 0, NULL),
++        ('thread-4', '/tmp/4.jsonl', 1773018000, 1773018240, 'vscode', 'openai', '/workspace/d', 'aborted', 'danger', 'never', 100, 1, 0, NULL);
++    `,
++  ]);
++
++  writeJsonl(path.join(codexHome, "sessions", "2026", "03", "09", "thread-1.jsonl"), [
++    { timestamp: "2026-03-09T01:00:00.000Z", type: "session_meta", payload: { id: "thread-1", model_provider: "openai" } },
++    { timestamp: "2026-03-09T01:00:01.000Z", type: "event_msg", payload: { type: "user_message", message: "hello" } },
++  ]);
++
++  writeJsonl(path.join(codexHome, "sessions", "2026", "03", "09", "thread-2.jsonl"), [
++    { timestamp: "2026-03-09T01:00:00.000Z", type: "session_meta", payload: { id: "thread-2", model_provider: "openai" } },
++    { timestamp: "2026-03-09T01:00:01.000Z", type: "event_msg", payload: { type: "user_message", message: "hello" } },
++    { timestamp: "2026-03-09T01:00:02.000Z", type: "response_item", payload: { type: "reasoning" } },
++  ]);
++
++  writeJsonl(path.join(codexHome, "sessions", "2026", "03", "09", "thread-3.jsonl"), [
++    { timestamp: "2026-03-09T01:00:00.000Z", type: "session_meta", payload: { id: "thread-3", model_provider: "openai" } },
++    { timestamp: "2026-03-09T01:00:01.000Z", type: "event_msg", payload: { type: "task_complete" } },
++  ]);
++
++  writeJsonl(path.join(codexHome, "sessions", "2026", "03", "09", "thread-4.jsonl"), [
++    { timestamp: "2026-03-09T01:00:00.000Z", type: "session_meta", payload: { id: "thread-4", model_provider: "openai" } },
++    { timestamp: "2026-03-09T01:00:01.000Z", type: "event_msg", payload: { type: "turn_aborted" } },
++  ]);
++
++  const snapshot = await loadSnapshot({
++    codexHome,
++    recentThreadsLimit: null,
++    loadOpenClawUsageFn: async () => null,
++  });
++
++  const statuses = Object.fromEntries(snapshot.recentThreads.map((row) => [row.id, row.statusLabel]));
++  assert.equal(statuses["thread-1"], "等待回答");
++  assert.equal(statuses["thread-2"], "进行中");
++  assert.equal(statuses["thread-3"], "已完结");
++  assert.equal(statuses["thread-4"], "已中断");
++});
++
++test("classifyUsageOrigin marks openclaw workspaces separately from local codex workspaces", () => {
++  assert.deepEqual(
++    classifyUsageOrigin({ cwd: "/Users/helena/.openclaw/workspace", source: "vscode" }),
++    {
++      kind: "openclaw-oauth",
++      label: "OpenClaw / OAuth",
++      description: "通过 OpenClaw 工作区触发，底层仍消耗 Codex token",
++    }
++  );
++
++  assert.deepEqual(
++    classifyUsageOrigin({ cwd: "/Users/helena/Cursor/codex_token", source: "cli" }),
++    {
++      kind: "codex-local",
++      label: "Codex 本地",
++      description: "直接来自 ~/.codex 的本地线程与会话日志",
++    }
++  );
++});
++
++test("extractSessionDetails keeps each user turn from event messages", () => {
++  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "codex-user-turns-"));
++  const filePath = path.join(tempDir, "thread.jsonl");
++
++  writeJsonl(filePath, [
++    {
++      timestamp: "2026-03-12T12:00:00.000Z",
++      type: "session_meta",
++      payload: {
++        id: "thread-turns",
++        model_provider: "openai",
++      },
++    },
++    {
++      timestamp: "2026-03-12T12:00:01.000Z",
++      type: "event_msg",
++      payload: {
++        type: "user_message",
++        message: "第一轮提问",
++      },
++    },
++    {
++      timestamp: "2026-03-12T12:01:01.000Z",
++      type: "event_msg",
++      payload: {
++        type: "user_message",
++        message: "第二轮追问",
++      },
++    },
++  ]);
++
++  const details = extractSessionDetails(filePath);
++  assert.deepEqual(
++    details.userMessages.map((message) => message.text),
++    ["第一轮提问", "第二轮追问"]
++  );
++});
++
+ test("pricing catalog groups models with identical pricing and removes the gpt-5.4-codex label", () => {
+   const catalog = buildPricingCatalog([
+     "gpt-5-codex",

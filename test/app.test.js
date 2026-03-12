@@ -158,22 +158,29 @@ test("snapshot endpoint returns normalized JSON and stream endpoint exposes SSE"
     assert.equal(pageResponse.status, 200);
     assert.match(pageResponse.headers.get("content-type"), /text\/html/);
     const pageHtml = await pageResponse.text();
-    assert.match(pageHtml, /tab-trigger/);
-    assert.match(pageHtml, /data-billing-scope="month"/);
-    assert.match(pageHtml, /账单明细/);
-    assert.match(pageHtml, /时间范围/);
-    assert.match(pageHtml, /全部会话/);
-    assert.match(pageHtml, /会话ID/);
-    assert.match(pageHtml, /创建时间/);
-    assert.match(pageHtml, /详情/);
-    assert.match(pageHtml, /按标题筛选/);
-    assert.match(pageHtml, /按模型筛选/);
-    assert.match(pageHtml, /创建日期/);
-    assert.match(pageHtml, /Codex用量统计/);
+    assert.match(pageHtml, /<div id="root"><\/div>/);
+    assert.match(pageHtml, /\/assets\/index-/);
+    assert.match(pageHtml, /window\.__INITIAL_SNAPSHOT__/);
+    assert.doesNotMatch(pageHtml, /按 shadcn\/ui 文档里的 Card/);
 
-    const assetResponse = await fetch(`http://127.0.0.1:${port}/app.js`);
+    const assetMatch = pageHtml.match(/src="(\/assets\/[^"]+\.js)"/);
+    assert.ok(assetMatch);
+
+    const assetResponse = await fetch(`http://127.0.0.1:${port}${assetMatch[1]}`);
     assert.equal(assetResponse.status, 200);
     assert.match(assetResponse.headers.get("content-type"), /application\/javascript/);
+
+    const headPageResponse = await fetch(`http://127.0.0.1:${port}/`, {
+      method: "HEAD",
+    });
+    assert.equal(headPageResponse.status, 200);
+    assert.match(headPageResponse.headers.get("content-type"), /text\/html/);
+
+    const headSnapshotResponse = await fetch(`http://127.0.0.1:${port}/api/snapshot`, {
+      method: "HEAD",
+    });
+    assert.equal(headSnapshotResponse.status, 200);
+    assert.match(headSnapshotResponse.headers.get("content-type"), /application\/json/);
 
     const updateResponse = await fetch(`http://127.0.0.1:${port}/api/source`, {
       method: "POST",

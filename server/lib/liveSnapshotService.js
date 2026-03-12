@@ -13,6 +13,7 @@ function createLiveSnapshotService(options = {}) {
   let latestSnapshot = createPlaceholderSnapshot();
   let warmupScheduled = false;
   let fullRefreshScheduled = false;
+  let snapshotGeneration = 0;
 
   function createPlaceholderSnapshot() {
     return {
@@ -49,36 +50,44 @@ function createLiveSnapshotService(options = {}) {
     }
   }
 
-  async function loadFastSnapshot() {
+  async function loadFastSnapshot(generation = snapshotGeneration) {
     const snapshot = await loadSnapshotFn({
       ...runtimeOptions,
       skipSessionParsing: true,
     });
+    if (generation !== snapshotGeneration) {
+      return latestSnapshot;
+    }
+
     latestSnapshot = { ...snapshot, loading: true };
     emitSnapshot(latestSnapshot);
     return latestSnapshot;
   }
 
-  async function refresh() {
+  async function refresh(generation = snapshotGeneration) {
     latestSnapshotPromise = loadSnapshotInBackgroundFn({
       ...runtimeOptions,
       recentSessionFileLimit: runtimeOptions.recentSessionFileLimit || 40,
       ledgerFileLimit: runtimeOptions.ledgerFileLimit || 217,
     });
     const snapshot = await latestSnapshotPromise;
+    if (generation !== snapshotGeneration) {
+      return latestSnapshot;
+    }
+
     latestSnapshot = { ...snapshot, loading: false };
     emitSnapshot(latestSnapshot);
     return latestSnapshot;
   }
 
-  function scheduleBackgroundRefresh() {
+  function scheduleBackgroundRefresh(generation = snapshotGeneration) {
     if (fullRefreshScheduled) {
       return;
     }
 
     fullRefreshScheduled = true;
     setTimeout(() => {
-      refresh().catch(() => {});
+      refresh(generation).catch(() => {});
     }, 0);
   }
 
@@ -90,15 +99,19 @@ function createLiveSnapshotService(options = {}) {
     warmupScheduled = true;
     latestSnapshot = latestSnapshot || createPlaceholderSnapshot();
 
+    const generation = snapshotGeneration;
+
     setTimeout(async () => {
       try {
-        latestSnapshotPromise = loadFastSnapshot();
+        latestSnapshotPromise = loadFastSnapshot(generation);
         await latestSnapshotPromise;
       } catch {
-        latestSnapshot = createPlaceholderSnapshot();
+        if (generation === snapshotGeneration) {
+          latestSnapshot = createPlaceholderSnapshot();
+        }
       } finally {
         latestSnapshotPromise = null;
-        scheduleBackgroundRefresh();
+        scheduleBackgroundRefresh(generation);
       }
     }, 0);
   }
@@ -127,6 +140,7 @@ function createLiveSnapshotService(options = {}) {
   }
 
   async function setCodexHome(codexHome) {
+    snapshotGeneration += 1;
     runtimeOptions.codexHome = codexHome;
     latestSnapshotPromise = null;
     latestSnapshot = createPlaceholderSnapshot();

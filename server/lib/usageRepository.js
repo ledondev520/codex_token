@@ -47,6 +47,7 @@ function getRecentThreads(stateDbPath, limit = null) {
     `
       SELECT
         id,
+        source,
         title,
         cwd,
         model_provider,
@@ -61,6 +62,7 @@ function getRecentThreads(stateDbPath, limit = null) {
 
   return rows.map((row) => ({
     id: row.id,
+    source: row.source,
     title: row.title,
     cwd: row.cwd,
     modelProvider: row.model_provider,
@@ -68,6 +70,60 @@ function getRecentThreads(stateDbPath, limit = null) {
     createdAt: Number(row.created_at),
     updatedAt: Number(row.updated_at),
   }));
+}
+
+function normalizeInlineText(value) {
+  return String(value || "").replace(/\s+/g, " ").trim();
+}
+
+function summarizeTitle(value, maxLength = 80) {
+  const normalized = normalizeInlineText(value);
+  if (!normalized) {
+    return "";
+  }
+
+  if (normalized.length <= maxLength) {
+    return normalized;
+  }
+
+  return `${normalized.slice(0, Math.max(0, maxLength - 3)).trimEnd()}...`;
+}
+
+function formatWorkspaceLabel(cwd) {
+  const normalized = String(cwd || "").trim();
+  if (!normalized) {
+    return "-";
+  }
+
+  const basename = path.basename(normalized) || normalized;
+  if (normalized.includes("/.openclaw/")) {
+    return `${basename} · ~/.openclaw`;
+  }
+
+  return basename;
+}
+
+function classifyUsageOrigin({ cwd, source }) {
+  const normalizedCwd = String(cwd || "").trim();
+  const normalizedSource = String(source || "").trim().toLowerCase();
+
+  if (
+    normalizedCwd.includes("/.openclaw/") ||
+    normalizedCwd.includes("\\.openclaw\\") ||
+    normalizedSource === "oauth"
+  ) {
+    return {
+      kind: "openclaw-oauth",
+      label: "OpenClaw / OAuth",
+      description: "通过 OpenClaw 工作区触发，底层仍消耗 Codex token",
+    };
+  }
+
+  return {
+    kind: "codex-local",
+    label: "Codex 本地",
+    description: "直接来自 ~/.codex 的本地线程与会话日志",
+  };
 }
 
 function getDailyUsage(stateDbPath, days = 14) {
@@ -217,6 +273,32 @@ function getThreadIdFromFilePath(filePath) {
   return match ? match[1] : basename;
 }
 
+function normalizeSessionStatus(statusType) {
+  if (statusType === "task_complete") {
+    return "已完结";
+  }
+
+  if (statusType === "turn_aborted") {
+    return "已中断";
+  }
+
+  if (statusType === "user_message" || statusType === "task_started") {
+    return "等待回答";
+  }
+
+  if (
+    statusType === "agent_message" ||
+    statusType === "token_count" ||
+    statusType === "reasoning" ||
+    statusType === "function_call" ||
+    statusType === "function_call_output"
+  ) {
+    return "进行中";
+  }
+
+  return null;
+}
+
 function extractSessionDetails(filePath, options = {}) {
   const content = fs.readFileSync(filePath, "utf8");
   const lines = content.split("\n").filter(Boolean);
@@ -234,6 +316,9 @@ function extractSessionDetails(filePath, options = {}) {
     modelAt: null,
     promptText: null,
     promptAt: null,
+    userMessages: [],
+    statusLabel: null,
+    statusAt: null,
     ledgerEntries: [],
     modelsUsed: [],
   };
@@ -271,7 +356,13 @@ function extractSessionDetails(filePath, options = {}) {
         details.promptText = promptText;
         details.promptAt = parsed.timestamp || details.promptAt;
         details.latestTimestamp = parsed.timestamp || details.latestTimestamp;
+        details.userMessages.push({
+          timestamp: parsed.timestamp || null,
+          text: promptText,
+        });
       }
+      details.statusLabel = normalizeSessionStatus("user_message") || details.statusLabel;
+      details.statusAt = parsed.timestamp || details.statusAt;
       continue;
     }
 
@@ -293,6 +384,25 @@ function extractSessionDetails(filePath, options = {}) {
           cost,
         });
       }
+      details.statusLabel = normalizeSessionStatus("token_count") || details.statusLabel;
+      details.statusAt = parsed.timestamp || details.statusAt;
+      continue;
+    }
+
+    if (parsed.type === "event_msg" && (parsed.payload?.type === "task_complete" || parsed.payload?.type === "task_started" || parsed.payload?.type === "agent_message" || parsed.payload?.type === "turn_aborted")) {
+      details.statusLabel = normalizeSessionStatus(parsed.payload.type) || details.statusLabel;
+      details.statusAt = parsed.timestamp || details.statusAt;
+      details.latestTimestamp = parsed.timestamp || details.latestTimestamp;
+      continue;
+    }
+
+    if (parsed.type === "response_item") {
+      const responseStatus = normalizeSessionStatus(parsed.payload?.type);
+      if (responseStatus) {
+        details.statusLabel = responseStatus;
+        details.statusAt = parsed.timestamp || details.statusAt;
+        details.latestTimestamp = parsed.timestamp || details.latestTimestamp;
+      }
     }
   }
 
@@ -300,7 +410,13 @@ function extractSessionDetails(filePath, options = {}) {
   details.cost = estimateCost(details.tokenUsage, details.modelName);
   details.modelsUsed = Array.from(modelSet);
 
-  if (!details.tokenUsage && !details.rateLimits && !details.modelName) {
+  if (
+    !details.tokenUsage &&
+    !details.rateLimits &&
+    !details.modelName &&
+    !details.promptText &&
+    !details.statusLabel
+  ) {
     return null;
   }
 
@@ -322,6 +438,21 @@ function mergeSessionDetails(existing, incoming) {
   const incomingModelTime = new Date(incoming.modelAt || 0).getTime();
   const existingPromptTime = new Date(existing.promptAt || 0).getTime();
   const incomingPromptTime = new Date(incoming.promptAt || 0).getTime();
+  const existingStatusTime = new Date(existing.statusAt || 0).getTime();
+  const incomingStatusTime = new Date(incoming.statusAt || 0).getTime();
+  const mergedUserMessages = [
+    ...(existing.userMessages || []),
+    ...(incoming.userMessages || []),
+  ]
+    .filter((message) => message?.text)
+    .sort(
+      (left, right) =>
+        new Date(left.timestamp || 0).getTime() - new Date(right.timestamp || 0).getTime()
+    )
+    .filter((message, index, rows) => {
+      const key = `${message.timestamp || ""}:${message.text}`;
+      return rows.findIndex((candidate) => `${candidate.timestamp || ""}:${candidate.text}` === key) === index;
+    });
   const merged = {
     ...existing,
     ...incoming,
@@ -358,6 +489,15 @@ function mergeSessionDetails(existing, incoming) {
       incoming.promptText && incomingPromptTime >= existingPromptTime
         ? incoming.promptAt
         : existing.promptAt,
+    userMessages: mergedUserMessages,
+    statusLabel:
+      incoming.statusLabel && incomingStatusTime >= existingStatusTime
+        ? incoming.statusLabel
+        : existing.statusLabel,
+    statusAt:
+      incoming.statusLabel && incomingStatusTime >= existingStatusTime
+        ? incoming.statusAt
+        : existing.statusAt,
   };
 
   merged.cost = estimateCost(merged.tokenUsage, merged.modelName);
@@ -463,6 +603,7 @@ function getLatestLiveEvent(sessionMap) {
   return {
     currentSession: latestTokenUsage
       ? {
+          threadId: latestTokenUsage.threadId,
           timestamp: latestTokenUsage.latestTimestamp,
           filePath: latestTokenUsage.filePath,
           tokenUsage: latestTokenUsage.tokenUsage,
@@ -512,16 +653,28 @@ async function loadSnapshot(options = {}) {
   const recentThreads = getRecentThreads(paths.stateDbPath, options.recentThreadsLimit).map(
     (thread) => {
       const sessionDetails = recentSessionMap.get(thread.id);
+      const usageOrigin = classifyUsageOrigin(thread);
       return {
         ...thread,
+        titlePreview: summarizeTitle(thread.title),
+        workspaceLabel: formatWorkspaceLabel(thread.cwd),
+        usageOrigin: usageOrigin.kind,
+        usageOriginLabel: usageOrigin.label,
+        usageOriginDescription: usageOrigin.description,
         modelName: sessionDetails?.modelName || null,
         promptText: sessionDetails?.promptText || null,
+        userMessages: sessionDetails?.userMessages || [],
+        statusLabel: sessionDetails?.statusLabel || "未知",
         tokenUsage: sessionDetails?.tokenUsage || null,
         cost: sessionDetails?.cost || null,
       };
     }
   );
+  const threadsById = new Map(recentThreads.map((thread) => [thread.id, thread]));
   const dailyUsage = getDailyUsage(paths.stateDbPath, options.dailyUsageLimit || 14);
+  const liveThread = latestLiveEvent.currentSession?.threadId
+    ? threadsById.get(latestLiveEvent.currentSession.threadId)
+    : null;
 
   return {
     generatedAt: (options.now || new Date()).toISOString(),
@@ -538,10 +691,12 @@ async function loadSnapshot(options = {}) {
     live: {
       currentSession: latestLiveEvent.currentSession
         ? {
-            ...latestLiveEvent.currentSession.tokenUsage,
-            modelName: latestLiveEvent.currentSession.modelName,
-            cost: latestLiveEvent.currentSession.cost,
-          }
+          ...latestLiveEvent.currentSession.tokenUsage,
+          modelName: latestLiveEvent.currentSession.modelName,
+          cost: latestLiveEvent.currentSession.cost,
+          usageOrigin: liveThread?.usageOrigin || "codex-local",
+          usageOriginLabel: liveThread?.usageOriginLabel || "Codex 本地",
+        }
         : null,
       rateLimits: latestLiveEvent.rateLimits?.rateLimits || null,
       latestEventAt: latestLiveEvent.currentSession?.timestamp || null,
@@ -555,6 +710,7 @@ async function loadSnapshot(options = {}) {
 }
 
 module.exports = {
+  classifyUsageOrigin,
   loadSnapshot,
   normalizeTokenUsage,
   normalizeRateLimits,

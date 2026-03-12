@@ -5,7 +5,11 @@ const os = require("node:os");
 const path = require("node:path");
 const { execFileSync } = require("node:child_process");
 
-const { loadSnapshot } = require("../server/lib/usageRepository");
+const {
+  classifyUsageOrigin,
+  extractSessionDetails,
+  loadSnapshot,
+} = require("../server/lib/usageRepository");
 const { buildPricingCatalog } = require("../server/lib/pricing");
 
 function writeJsonl(filePath, rows) {
@@ -174,6 +178,13 @@ test("loadSnapshot aggregates sqlite history and latest live token/rate-limit ev
           rate_limits: null,
         },
       },
+      {
+        timestamp: "2026-03-08T04:05:02.000Z",
+        type: "event_msg",
+        payload: {
+          type: "task_complete",
+        },
+      },
     ]
   );
 
@@ -196,11 +207,139 @@ test("loadSnapshot aggregates sqlite history and latest live token/rate-limit ev
   assert.equal(snapshot.recentThreads[0].id, "thread-2");
   assert.equal(snapshot.recentThreads[0].modelName, "gpt-5-codex");
   assert.equal(snapshot.recentThreads[0].promptText, "请把模型价格表按相同价格合并展示");
+  assert.equal(snapshot.recentThreads[0].statusLabel, "已完结");
   assert.equal(snapshot.dailyUsage[0].totalTokens, 4600);
   assert.equal(snapshot.dailyLedger[0].totalTokens, 630);
   assert.ok(Math.abs(snapshot.dailyLedger[0].totalUsd - 0.0016775) < 0.000001);
   assert.equal(snapshot.pricingCatalog[0].modelName, "gpt-5-codex");
   assert.equal(snapshot.pricingCatalog[0].inputPerMillion, 1.25);
+});
+
+test("loadSnapshot derives session status from latest lifecycle event", async () => {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "codex-status-"));
+  const codexHome = path.join(tempDir, ".codex");
+  const dbPath = path.join(codexHome, "state_5.sqlite");
+  fs.mkdirSync(path.dirname(dbPath), { recursive: true });
+  execFileSync("sqlite3", [
+    dbPath,
+    `
+      CREATE TABLE threads (
+        id TEXT PRIMARY KEY,
+        rollout_path TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL,
+        source TEXT NOT NULL,
+        model_provider TEXT NOT NULL,
+        cwd TEXT NOT NULL,
+        title TEXT NOT NULL,
+        sandbox_policy TEXT NOT NULL,
+        approval_mode TEXT NOT NULL,
+        tokens_used INTEGER NOT NULL DEFAULT 0,
+        has_user_event INTEGER NOT NULL DEFAULT 0,
+        archived INTEGER NOT NULL DEFAULT 0,
+        archived_at INTEGER
+      );
+      INSERT INTO threads (
+        id, rollout_path, created_at, updated_at, source, model_provider, cwd, title,
+        sandbox_policy, approval_mode, tokens_used, has_user_event, archived, archived_at
+      ) VALUES
+        ('thread-1', '/tmp/1.jsonl', 1773018000, 1773018060, 'vscode', 'openai', '/workspace/a', 'waiting', 'danger', 'never', 100, 1, 0, NULL),
+        ('thread-2', '/tmp/2.jsonl', 1773018000, 1773018120, 'vscode', 'openai', '/workspace/b', 'running', 'danger', 'never', 100, 1, 0, NULL),
+        ('thread-3', '/tmp/3.jsonl', 1773018000, 1773018180, 'vscode', 'openai', '/workspace/c', 'done', 'danger', 'never', 100, 1, 0, NULL),
+        ('thread-4', '/tmp/4.jsonl', 1773018000, 1773018240, 'vscode', 'openai', '/workspace/d', 'aborted', 'danger', 'never', 100, 1, 0, NULL);
+    `,
+  ]);
+
+  writeJsonl(path.join(codexHome, "sessions", "2026", "03", "09", "thread-1.jsonl"), [
+    { timestamp: "2026-03-09T01:00:00.000Z", type: "session_meta", payload: { id: "thread-1", model_provider: "openai" } },
+    { timestamp: "2026-03-09T01:00:01.000Z", type: "event_msg", payload: { type: "user_message", message: "hello" } },
+  ]);
+
+  writeJsonl(path.join(codexHome, "sessions", "2026", "03", "09", "thread-2.jsonl"), [
+    { timestamp: "2026-03-09T01:00:00.000Z", type: "session_meta", payload: { id: "thread-2", model_provider: "openai" } },
+    { timestamp: "2026-03-09T01:00:01.000Z", type: "event_msg", payload: { type: "user_message", message: "hello" } },
+    { timestamp: "2026-03-09T01:00:02.000Z", type: "response_item", payload: { type: "reasoning" } },
+  ]);
+
+  writeJsonl(path.join(codexHome, "sessions", "2026", "03", "09", "thread-3.jsonl"), [
+    { timestamp: "2026-03-09T01:00:00.000Z", type: "session_meta", payload: { id: "thread-3", model_provider: "openai" } },
+    { timestamp: "2026-03-09T01:00:01.000Z", type: "event_msg", payload: { type: "task_complete" } },
+  ]);
+
+  writeJsonl(path.join(codexHome, "sessions", "2026", "03", "09", "thread-4.jsonl"), [
+    { timestamp: "2026-03-09T01:00:00.000Z", type: "session_meta", payload: { id: "thread-4", model_provider: "openai" } },
+    { timestamp: "2026-03-09T01:00:01.000Z", type: "event_msg", payload: { type: "turn_aborted" } },
+  ]);
+
+  const snapshot = await loadSnapshot({
+    codexHome,
+    recentThreadsLimit: null,
+    loadOpenClawUsageFn: async () => null,
+  });
+
+  const statuses = Object.fromEntries(snapshot.recentThreads.map((row) => [row.id, row.statusLabel]));
+  assert.equal(statuses["thread-1"], "等待回答");
+  assert.equal(statuses["thread-2"], "进行中");
+  assert.equal(statuses["thread-3"], "已完结");
+  assert.equal(statuses["thread-4"], "已中断");
+});
+
+test("classifyUsageOrigin marks openclaw workspaces separately from local codex workspaces", () => {
+  assert.deepEqual(
+    classifyUsageOrigin({ cwd: "/Users/helena/.openclaw/workspace", source: "vscode" }),
+    {
+      kind: "openclaw-oauth",
+      label: "OpenClaw / OAuth",
+      description: "通过 OpenClaw 工作区触发，底层仍消耗 Codex token",
+    }
+  );
+
+  assert.deepEqual(
+    classifyUsageOrigin({ cwd: "/Users/helena/Cursor/codex_token", source: "cli" }),
+    {
+      kind: "codex-local",
+      label: "Codex 本地",
+      description: "直接来自 ~/.codex 的本地线程与会话日志",
+    }
+  );
+});
+
+test("extractSessionDetails keeps each user turn from event messages", () => {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "codex-user-turns-"));
+  const filePath = path.join(tempDir, "thread.jsonl");
+
+  writeJsonl(filePath, [
+    {
+      timestamp: "2026-03-12T12:00:00.000Z",
+      type: "session_meta",
+      payload: {
+        id: "thread-turns",
+        model_provider: "openai",
+      },
+    },
+    {
+      timestamp: "2026-03-12T12:00:01.000Z",
+      type: "event_msg",
+      payload: {
+        type: "user_message",
+        message: "第一轮提问",
+      },
+    },
+    {
+      timestamp: "2026-03-12T12:01:01.000Z",
+      type: "event_msg",
+      payload: {
+        type: "user_message",
+        message: "第二轮追问",
+      },
+    },
+  ]);
+
+  const details = extractSessionDetails(filePath);
+  assert.deepEqual(
+    details.userMessages.map((message) => message.text),
+    ["第一轮提问", "第二轮追问"]
+  );
 });
 
 test("pricing catalog groups models with identical pricing and removes the gpt-5.4-codex label", () => {

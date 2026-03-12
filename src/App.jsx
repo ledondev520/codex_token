@@ -1,0 +1,1146 @@
+import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
+
+import { Badge } from "./components/ui/badge.jsx";
+import { Button } from "./components/ui/button.jsx";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "./components/ui/card.jsx";
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "./components/ui/accordion.jsx";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "./components/ui/dialog.jsx";
+import { Input } from "./components/ui/input.jsx";
+import { Label } from "./components/ui/label.jsx";
+import { Calendar } from "./components/ui/calendar.jsx";
+import { Popover, PopoverContent, PopoverTrigger } from "./components/ui/popover.jsx";
+import { Progress } from "./components/ui/progress.jsx";
+import { ScrollArea } from "./components/ui/scroll-area.jsx";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "./components/ui/select.jsx";
+import { Separator } from "./components/ui/separator.jsx";
+import { Skeleton } from "./components/ui/skeleton.jsx";
+import { Slider } from "./components/ui/slider.jsx";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "./components/ui/table.jsx";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "./components/ui/tabs.jsx";
+import { MetricTile, MetricTileSkeleton } from "./components/dashboard/metric-tile.jsx";
+import { EmptyState } from "./components/dashboard/empty-state.jsx";
+import { PageHeader } from "./components/dashboard/page-header.jsx";
+import { SectionCard } from "./components/dashboard/section-card.jsx";
+import { cn } from "./lib/utils.js";
+import {
+  Area,
+  AreaChart,
+  CartesianGrid,
+  Legend,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
+import {
+  calculateResetProgress,
+  formatModelLabel,
+  formatPercent,
+  formatPlanName,
+  formatPricePerMillion,
+  formatResetTime,
+  formatTokenMillions,
+  formatTokenRaw,
+  formatUsageSource,
+  formatUsd,
+  getBillableInputTokens,
+  getFilteredSessionRows,
+  getScopeRows,
+  getSessionPageCount,
+  getSessionPageRows,
+  getVisibleLedgerRows,
+  isRateLimitSnapshotStale,
+  normalizeInlineText,
+  summarizeLedgerRows,
+  summarizePromptText,
+} from "./lib/dashboard-logic.mjs";
+
+const INITIAL_SNAPSHOT =
+  typeof window !== "undefined" && window.__INITIAL_SNAPSHOT__
+    ? window.__INITIAL_SNAPSHOT__
+    : null;
+
+const EMPTY_SNAPSHOT = {
+  generatedAt: new Date().toISOString(),
+  sources: {
+    codexHome: "",
+  },
+  overview: {
+    totalThreads: 0,
+    totalTokens: 0,
+    totalEstimatedCost: 0,
+  },
+  openclaw: null,
+  live: {
+    currentSession: null,
+    rateLimits: null,
+    latestRateLimitAt: null,
+  },
+  recentThreads: [],
+  dailyLedger: [],
+  pricingCatalog: [],
+  loading: true,
+};
+
+function connectionBadgeVariant(label) {
+  if (label.includes("失败")) {
+    return "danger";
+  }
+
+  if (label.includes("重连")) {
+    return "warning";
+  }
+
+  return "info";
+}
+
+function originBadgeVariant(origin) {
+  return origin === "openclaw-oauth" ? "teal" : "info";
+}
+
+function statusBadgeVariant(label) {
+  if (label === "进行中") {
+    return "warning";
+  }
+
+  if (label === "已完结") {
+    return "success";
+  }
+
+  if (label === "已中断") {
+    return "danger";
+  }
+
+  return "secondary";
+}
+
+function useDashboardSnapshot() {
+  const [snapshot, setSnapshot] = useState(INITIAL_SNAPSHOT || EMPTY_SNAPSHOT);
+  const [connectionLabel, setConnectionLabel] = useState(
+    INITIAL_SNAPSHOT?.loading ? "连接中" : INITIAL_SNAPSHOT ? "实时中" : "连接中"
+  );
+
+  useEffect(() => {
+    let source;
+    let cancelled = false;
+
+    async function fetchSnapshot() {
+      const response = await fetch("/api/snapshot");
+      if (!response.ok) {
+        throw new Error(`snapshot request failed: ${response.status}`);
+      }
+
+      const data = await response.json();
+      if (!cancelled) {
+        setSnapshot(data);
+      }
+    }
+
+    fetchSnapshot()
+      .then(() => {
+        if (!cancelled) {
+          setConnectionLabel("实时中");
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setConnectionLabel("读取失败");
+        }
+      });
+
+    if ("EventSource" in window) {
+      source = new EventSource("/api/stream");
+      source.addEventListener("snapshot", (event) => {
+        if (cancelled) {
+          return;
+        }
+
+        setSnapshot(JSON.parse(event.data));
+        setConnectionLabel("实时流");
+      });
+
+      source.onerror = () => {
+        if (!cancelled) {
+          setConnectionLabel("重连中");
+        }
+      };
+    }
+
+    return () => {
+      cancelled = true;
+      source?.close();
+    };
+  }, []);
+
+  return {
+    snapshot,
+    setSnapshot,
+    connectionLabel,
+    setConnectionLabel,
+  };
+}
+
+function formatLocalDateLabel(value) {
+  if (!value) {
+    return "选择日期";
+  }
+
+  return value;
+}
+
+function parseDateValue(value) {
+  if (!value) {
+    return undefined;
+  }
+
+  const [year, month, day] = value.split("-").map(Number);
+  if (!year || !month || !day) {
+    return undefined;
+  }
+
+  return new Date(year, month - 1, day);
+}
+
+function formatDateValue(date) {
+  if (!(date instanceof Date) || Number.isNaN(date.getTime())) {
+    return "";
+  }
+
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function CostBreakdownTable({ currentSession }) {
+  const cost = currentSession?.cost;
+
+  if (!currentSession || !cost) {
+    return <EmptyState>当前模型没有匹配到价格，无法估算费用。</EmptyState>;
+  }
+
+  const rows = [
+    {
+      label: "未缓存输入",
+      tokens: formatTokenMillions(getBillableInputTokens(currentSession)),
+      rate: formatPricePerMillion(cost.inputPerMillion),
+      total: formatUsd(cost.inputUsd),
+    },
+    {
+      label: "缓存输入",
+      tokens: formatTokenMillions(currentSession.cachedInputTokens),
+      rate: formatPricePerMillion(cost.cachedInputPerMillion),
+      total: formatUsd(cost.cachedInputUsd),
+    },
+    {
+      label: "输出 token",
+      tokens: formatTokenMillions(currentSession.outputTokens),
+      rate: formatPricePerMillion(cost.outputPerMillion),
+      total: formatUsd(cost.outputUsd),
+    },
+  ];
+
+  return (
+    <ScrollArea className="overflow-hidden rounded-xl border">
+      <Table className="min-w-[560px]">
+        <TableHeader>
+          <TableRow>
+            <TableHead>项目</TableHead>
+            <TableHead className="text-right">数量</TableHead>
+            <TableHead className="text-right">单价</TableHead>
+            <TableHead className="text-right">费用</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {rows.map((row) => (
+            <TableRow key={row.label}>
+              <TableCell>{row.label}</TableCell>
+              <TableCell className="text-right mono">{row.tokens}</TableCell>
+              <TableCell className="text-right">{row.rate}</TableCell>
+              <TableCell className="text-right mono font-semibold">{row.total}</TableCell>
+            </TableRow>
+          ))}
+          <TableRow>
+            <TableCell className="font-semibold">估算总费用</TableCell>
+            <TableCell />
+            <TableCell />
+            <TableCell className="text-right mono text-base font-semibold">{formatUsd(cost.totalUsd)}</TableCell>
+          </TableRow>
+        </TableBody>
+      </Table>
+    </ScrollArea>
+  );
+}
+
+function PricingCatalogTable({ rows }) {
+  if (!rows.length) {
+    return <EmptyState>没有识别到模型价格。</EmptyState>;
+  }
+
+  return (
+    <ScrollArea className="overflow-hidden rounded-xl border">
+      <Table className="min-w-[560px]">
+        <TableHeader>
+          <TableRow>
+            <TableHead>模型</TableHead>
+            <TableHead className="text-right">输入</TableHead>
+            <TableHead className="text-right">缓存输入</TableHead>
+            <TableHead className="text-right">输出</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {rows.map((row) => (
+            <TableRow key={row.modelName}>
+              <TableCell>
+                <div className="font-semibold">{row.modelName}</div>
+                <div className="mt-1 text-xs text-muted-foreground">{row.sourceLabel || "-"}</div>
+              </TableCell>
+              <TableCell className="text-right mono">{formatPricePerMillion(row.inputPerMillion)}</TableCell>
+              <TableCell className="text-right mono">{formatPricePerMillion(row.cachedInputPerMillion)}</TableCell>
+              <TableCell className="text-right mono">{formatPricePerMillion(row.outputPerMillion)}</TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+    </ScrollArea>
+  );
+}
+
+function OpenClawCostTable({ rows }) {
+  if (!rows?.length) {
+    return <EmptyState>暂无模型费用明细。</EmptyState>;
+  }
+
+  return (
+    <ScrollArea className="overflow-hidden rounded-xl border">
+      <Table className="min-w-[320px]">
+        <TableHeader>
+          <TableRow>
+            <TableHead>模型</TableHead>
+            <TableHead className="text-right">费用</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {rows.map((row) => (
+            <TableRow key={row.modelName}>
+              <TableCell className="font-medium">{formatModelLabel(row.modelName)}</TableCell>
+              <TableCell className="text-right mono font-semibold">{formatUsd(row.totalUsd)}</TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+    </ScrollArea>
+  );
+}
+
+function SessionDetailDialog({ row, open, onOpenChange }) {
+  const promptText = row?.promptText || "";
+  const promptSummary = summarizePromptText(promptText, 220);
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>会话详情</DialogTitle>
+          <DialogDescription>本地日志里能读取到的会话信息与用户轮次。</DialogDescription>
+        </DialogHeader>
+        {!row ? null : (
+          <div className="space-y-5">
+            <div className="grid gap-3 text-sm md:grid-cols-2">
+              <div>
+                <Label className="mb-1 block">会话 ID</Label>
+                <div className="mono break-all">{row.id}</div>
+              </div>
+              <div>
+                <Label className="mb-1 block">来源</Label>
+                <Badge variant={originBadgeVariant(row.usageOrigin)} className="rounded-full">
+                  {row.usageOriginLabel}
+                </Badge>
+              </div>
+            </div>
+
+            <div>
+              <Label className="mb-1 block">标题</Label>
+              <div className="text-base font-medium">{row.titlePreview || row.title}</div>
+            </div>
+
+            <div className="rounded-xl border bg-muted/40 p-4">
+              <Label className="mb-2 block">提示词摘要</Label>
+              <div className="whitespace-pre-wrap leading-7">{promptSummary || "未在本地日志中找到提示词。"}</div>
+              {promptText && promptSummary !== normalizeInlineText(promptText) ? (
+                <Accordion type="single" collapsible className="mt-3 rounded-lg border bg-background px-3">
+                  <AccordionItem value="prompt" className="border-none">
+                    <AccordionTrigger className="py-3 text-sm text-muted-foreground hover:no-underline">
+                      查看完整提示词
+                    </AccordionTrigger>
+                    <AccordionContent>
+                      <pre className="whitespace-pre-wrap text-sm leading-6">{promptText}</pre>
+                    </AccordionContent>
+                  </AccordionItem>
+                </Accordion>
+              ) : null}
+            </div>
+
+            <div className="space-y-3">
+              <Label className="block">用户轮次</Label>
+              {(row.userMessages || []).length ? (
+                <ScrollArea className="max-h-[280px] rounded-xl border">
+                  <div className="grid gap-3 p-3">
+                    {row.userMessages.map((message, index) => (
+                      <Card key={`${message.timestamp}-${index}`} className="rounded-xl shadow-none">
+                        <CardContent className="space-y-2 p-4">
+                          <div className="flex items-center justify-between gap-3 text-xs text-muted-foreground">
+                            <strong className="text-foreground">第 {index + 1} 轮</strong>
+                            <span>{message.timestamp ? new Date(message.timestamp).toLocaleString("zh-CN") : "时间未知"}</span>
+                          </div>
+                          <p className="whitespace-pre-wrap text-sm leading-6">{summarizePromptText(message.text, 360)}</p>
+                        </CardContent>
+                      </Card>
+                    ))}
+                  </div>
+                </ScrollArea>
+              ) : (
+                <EmptyState>当前本地日志里没有更多用户轮次。</EmptyState>
+              )}
+            </div>
+
+            <div className="space-y-3">
+              <Label className="block">Token / 费用明细</Label>
+              <CostBreakdownTable currentSession={row.tokenUsage ? { ...row.tokenUsage, cost: row.cost } : null} />
+            </div>
+          </div>
+        )}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function BillingChart({ rows }) {
+  const chartRows = [...rows].reverse().map((row) => ({
+    ...row,
+    tokensInMillions: Number((Number(row.totalTokens || 0) / 1_000_000).toFixed(2)),
+  }));
+  const gridColor = "var(--border)";
+  const mutedTextColor = "var(--muted-foreground)";
+  const tokenStroke = "var(--primary)";
+  const tokenFill = "color-mix(in srgb, var(--primary) 20%, transparent)";
+  const costStroke = "var(--accent)";
+  const costFill = "color-mix(in srgb, var(--accent) 24%, transparent)";
+
+  return (
+    <div className="rounded-xl border bg-background p-4">
+      {chartRows.length > 1 ? (
+        <div className="h-[320px]">
+          <ResponsiveContainer width="100%" height="100%">
+            <AreaChart data={chartRows} margin={{ left: 8, right: 8, top: 12, bottom: 0 }}>
+              <CartesianGrid vertical={false} stroke={gridColor} />
+              <XAxis dataKey="day" tick={{ fontSize: 12, fill: mutedTextColor }} />
+              <YAxis
+                yAxisId="tokens"
+                tick={{ fontSize: 12, fill: mutedTextColor }}
+                tickFormatter={(value) => `${value}M`}
+              />
+              <YAxis
+                yAxisId="cost"
+                orientation="right"
+                tick={{ fontSize: 12, fill: mutedTextColor }}
+                tickFormatter={(value) => `$${value}`}
+              />
+              <Tooltip
+                contentStyle={{ borderRadius: 12, borderColor: "var(--border)", backgroundColor: "var(--card)" }}
+                formatter={(value, name) => {
+                  if (name === "Token") {
+                    return [`${value}M`, name];
+                  }
+
+                  return [formatUsd(value), name];
+                }}
+              />
+              <Legend />
+              <Area
+                yAxisId="tokens"
+                type="monotone"
+                dataKey="tokensInMillions"
+                name="Token"
+                stroke={tokenStroke}
+                fill={tokenFill}
+                fillOpacity={0.45}
+              />
+              <Area
+                yAxisId="cost"
+                type="monotone"
+                dataKey="totalUsd"
+                name="费用"
+                stroke={costStroke}
+                fill={costFill}
+                fillOpacity={0.3}
+              />
+            </AreaChart>
+          </ResponsiveContainer>
+        </div>
+      ) : chartRows.length === 1 ? (
+        <EmptyState>
+          当前范围仅包含 {chartRows[0].day} 这一天，走势图已隐藏，请直接查看下方账单明细表。
+        </EmptyState>
+      ) : (
+        <EmptyState>没有每日账单数据。</EmptyState>
+      )}
+    </div>
+  );
+}
+
+function CodexDashboard({
+  snapshot,
+  connectionLabel,
+  codexHomeInput,
+  onCodexHomeInputChange,
+  onApplySource,
+  onResetSource,
+}) {
+  const [sessionsTab, setSessionsTab] = useState("sessions");
+  const [billingScope, setBillingScope] = useState("cumulative");
+  const [selectedThreadId, setSelectedThreadId] = useState(null);
+  const [sessionPage, setSessionPage] = useState(1);
+  const [range, setRange] = useState({ start: 0, end: 0 });
+  const [filters, setFilters] = useState({
+    title: "",
+    model: "",
+    origin: "",
+    createdDate: "",
+  });
+
+  const deferredFilters = useDeferredValue(filters);
+  const filteredThreads = useMemo(
+    () => getFilteredSessionRows(snapshot.recentThreads || [], deferredFilters),
+    [snapshot.recentThreads, deferredFilters]
+  );
+  const totalPages = getSessionPageCount(filteredThreads, 10);
+  const safePage = Math.min(totalPages, Math.max(1, sessionPage));
+  const pageRows = getSessionPageRows(filteredThreads, safePage, 10);
+  const selectedThread = useMemo(
+    () => (snapshot.recentThreads || []).find((row) => row.id === selectedThreadId) || null,
+    [snapshot.recentThreads, selectedThreadId]
+  );
+
+  useEffect(() => {
+    setSessionPage(1);
+  }, [deferredFilters]);
+
+  const scopeRows = useMemo(
+    () => getScopeRows(snapshot.dailyLedger || [], snapshot.generatedAt, billingScope),
+    [snapshot.dailyLedger, snapshot.generatedAt, billingScope]
+  );
+
+  useEffect(() => {
+    if (!scopeRows.length) {
+      setRange({ start: 0, end: 0 });
+      return;
+    }
+
+    setRange((current) => {
+      const max = scopeRows.length - 1;
+      const start = Math.max(0, Math.min(current.start, max));
+      const end = Math.max(start, Math.min(current.end ?? max, max));
+      return { start, end };
+    });
+  }, [scopeRows]);
+
+  const visibleLedgerRows = useMemo(
+    () => getVisibleLedgerRows(scopeRows, range.start, range.end ?? scopeRows.length - 1),
+    [scopeRows, range]
+  );
+  const scopeSummary = summarizeLedgerRows(scopeRows);
+  const visibleSummary = summarizeLedgerRows(visibleLedgerRows);
+
+  const currentSession = snapshot.live.currentSession;
+  const rateLimits = snapshot.live.rateLimits;
+  const primary = rateLimits?.primary || null;
+  const secondary = rateLimits?.secondary || null;
+
+  const sourceCards = (
+    <div className="flex flex-wrap items-center gap-3">
+      <Badge variant={connectionBadgeVariant(connectionLabel)}>{connectionLabel}</Badge>
+      <Badge variant="secondary">订阅计划 {formatPlanName(rateLimits?.planType)}</Badge>
+    </div>
+  );
+
+  const buildResetCopy = (windowData) => {
+    if (!windowData) {
+      return "等待快照";
+    }
+
+    const stale = isRateLimitSnapshotStale({
+      generatedAt: snapshot.generatedAt,
+      latestRateLimitAt: snapshot.live.latestRateLimitAt,
+      resetsAt: windowData.resetsAt,
+    });
+
+    if (stale) {
+      return `已过重置点，等待新的限制快照 · 上次快照 ${new Date(
+        snapshot.live.latestRateLimitAt
+      ).toLocaleString("zh-CN")}`;
+    }
+
+    return `重置于 ${formatResetTime(windowData.resetsAt)} · ${windowData.windowMinutes} 分钟窗口`;
+  };
+
+  const renderWindowCard = (windowData) => {
+    const progress = calculateResetProgress({
+      generatedAt: snapshot.generatedAt,
+      resetsAt: windowData?.resetsAt,
+      windowMinutes: windowData?.windowMinutes,
+    });
+    const stale = isRateLimitSnapshotStale({
+      generatedAt: snapshot.generatedAt,
+      latestRateLimitAt: snapshot.live.latestRateLimitAt,
+      resetsAt: windowData?.resetsAt,
+    });
+
+    return (
+      <Card className="rounded-xl shadow-none">
+        <CardContent className="space-y-4 p-4">
+          <div className="flex items-center justify-between gap-4">
+            <span className="font-medium">{windowData?.label || "-"}</span>
+            <strong className="mono text-2xl">{formatPercent(windowData?.usedPercent)}</strong>
+          </div>
+          <Progress
+            value={Math.max(0, Math.min(100, Number(windowData?.usedPercent || 0)))}
+            indicatorClassName={stale ? "bg-amber-500" : "bg-primary"}
+          />
+          <div className="space-y-1 text-sm text-muted-foreground">
+            <p>剩余 {formatPercent(windowData?.remainingPercent)}</p>
+            <p>{buildResetCopy(windowData)}</p>
+          </div>
+          <div className="flex items-center justify-between text-xs text-muted-foreground">
+            <span>距重置进度</span>
+            <strong className="mono text-foreground">
+              {stale ? "快照已过期" : progress.elapsedPercent !== null ? `${progress.elapsedPercent}%` : "-"}
+            </strong>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  };
+
+  return (
+    <>
+      <div className="grid gap-5">
+        <SectionCard title="数据源与刷新" description="本地数据源、目录切换与来源说明" actions={sourceCards}>
+          <div className="grid gap-4 lg:grid-cols-[minmax(0,1.1fr)_minmax(320px,0.9fr)]">
+            <div className="grid gap-4 md:grid-cols-2">
+              <Card className="rounded-xl bg-muted/40 shadow-none">
+                <CardContent className="space-y-2 p-4">
+                  <Label>读取范围</Label>
+                  <div className="text-lg font-semibold">Codex 本地</div>
+                  <p className="text-sm leading-6 text-muted-foreground">来自 <code>~/.codex</code> 的 SQLite 与 session JSONL，代表直接使用 Codex 的 token。</p>
+                </CardContent>
+              </Card>
+              <Card className="rounded-xl bg-muted/40 shadow-none">
+                <CardContent className="space-y-2 p-4">
+                  <Label>辅助来源</Label>
+                  <div className="text-lg font-semibold">OpenClaw / OAuth</div>
+                  <p className="text-sm leading-6 text-muted-foreground">来自 <code>codexbar cost --provider codex</code>，用于识别 OpenClaw 间接消耗的 Codex token。</p>
+                </CardContent>
+              </Card>
+            </div>
+            <Card className="rounded-xl shadow-none">
+              <CardContent className="space-y-4 p-4">
+                <div className="space-y-1">
+                  <Label>实时状态</Label>
+                  <div className="text-sm text-muted-foreground">最近更新 {new Date(snapshot.generatedAt).toLocaleString("zh-CN")}</div>
+                  <div className="text-sm font-medium">当前目录 {snapshot.sources.codexHome || "-"}</div>
+                </div>
+                <form
+                  className="grid gap-3"
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    onApplySource();
+                  }}
+                >
+                  <Label htmlFor="codex-home-input">本地数据目录</Label>
+                  <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_auto_auto]">
+                    <Input id="codex-home-input" value={codexHomeInput} onChange={(event) => onCodexHomeInputChange(event.target.value)} placeholder="粘贴 .codex 目录或其上级目录" />
+                    <Button type="submit">应用路径</Button>
+                    <Button type="button" variant="outline" onClick={onResetSource}>
+                      恢复默认
+                    </Button>
+                  </div>
+                  <p className="text-sm text-muted-foreground">直接输入文件夹地址后切换数据源；默认回退到当前用户的 <code>~/.codex</code>。</p>
+                </form>
+              </CardContent>
+            </Card>
+          </div>
+        </SectionCard>
+
+        <SectionCard title="总览" description="统一以 M 表示百万 token">
+          {snapshot.loading ? (
+            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
+              {Array.from({ length: 5 }).map((_, index) => (
+                <MetricTileSkeleton key={index} />
+              ))}
+            </div>
+          ) : (
+            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
+              <MetricTile label="Codex 本地总消耗" value={formatTokenMillions(snapshot.overview.totalTokens)} subvalue={`${formatTokenRaw(snapshot.overview.totalTokens)} tokens`} />
+              <MetricTile label="Codex 本地线程数" value={formatTokenRaw(snapshot.overview.totalThreads)} subvalue="未归档会话" />
+              <MetricTile label="当前 Codex 线程" value={currentSession ? formatTokenMillions(currentSession.totalTokens) : "-"} subvalue={currentSession ? `${currentSession.usageOriginLabel || "Codex 本地"} · 最近一次 ${formatTokenMillions(currentSession.lastTokens)}` : "最近一次不可用"} tone="dark" />
+              <MetricTile label="Codex 本地累计费用" value={formatUsd(snapshot.overview.totalEstimatedCost)} subvalue="根据本地日志里的每次增量使用记录估算" compact tone="muted" />
+              <MetricTile label="当前模型" value={formatModelLabel(currentSession?.modelName)} subvalue={currentSession?.cost ? `当前会话费用 ${formatUsd(currentSession.cost.totalUsd)}` : "当前会话费用不可用"} compact tone="teal" />
+            </div>
+          )}
+        </SectionCard>
+
+        <SectionCard title="限制窗口" description="本地日志中最近一次出现的限制快照">
+          <div className="grid gap-4 xl:grid-cols-3">
+            {renderWindowCard(primary)}
+            {renderWindowCard(secondary)}
+            <Card className="rounded-xl bg-muted/40 shadow-none">
+              <CardContent className="space-y-3 p-4 text-sm">
+                <div className="flex items-center justify-between gap-3">
+                  <span className="font-medium">账户限制信息</span>
+                  <strong className="mono text-lg">{formatPlanName(rateLimits?.planType)}</strong>
+                </div>
+                <p className="text-muted-foreground">本地数据里没有可用的 Credits 数值</p>
+                <p className="text-muted-foreground">
+                  {snapshot.live.latestRateLimitAt
+                    ? `限制快照时间 ${new Date(snapshot.live.latestRateLimitAt).toLocaleString("zh-CN")}`
+                    : "限制来源 -"}
+                </p>
+              </CardContent>
+            </Card>
+          </div>
+
+          <div className="mt-4 grid gap-4 xl:grid-cols-[minmax(0,1.15fr)_minmax(0,0.95fr)]">
+            <Card className="rounded-xl shadow-none">
+              <CardHeader className="pb-4">
+                <CardTitle className="text-lg">当前会话账单明细</CardTitle>
+                <CardDescription>这是当前会话累计，不是全局累计</CardDescription>
+              </CardHeader>
+              <CardContent className="pt-0">
+                <CostBreakdownTable currentSession={currentSession} />
+              </CardContent>
+            </Card>
+            <Card className="rounded-xl shadow-none">
+              <CardHeader className="pb-4">
+                <CardTitle className="text-lg">模型价格表</CardTitle>
+                <CardDescription>同价模型自动合并展示</CardDescription>
+              </CardHeader>
+              <CardContent className="pt-0">
+                <PricingCatalogTable rows={snapshot.pricingCatalog || []} />
+              </CardContent>
+            </Card>
+          </div>
+        </SectionCard>
+      </div>
+
+      <SectionCard title="全部会话与账单" description="会话详情、账单走势与来源筛选" className="rounded-2xl lg:col-span-2">
+        <Tabs value={sessionsTab} onValueChange={setSessionsTab}>
+          <TabsList>
+            <TabsTrigger value="sessions">全部会话</TabsTrigger>
+            <TabsTrigger value="billing">账单走势</TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="sessions">
+            <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+              <div className="space-y-2">
+                <Label htmlFor="filter-title" className="tracking-[0.14em]">按标题筛选</Label>
+                <Input id="filter-title" value={filters.title} onChange={(event) => setFilters((current) => ({ ...current, title: event.target.value }))} placeholder="输入标题关键词" />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="filter-model" className="tracking-[0.14em]">按模型筛选</Label>
+                <Input id="filter-model" value={filters.model} onChange={(event) => setFilters((current) => ({ ...current, model: event.target.value }))} placeholder="输入模型名" />
+              </div>
+              <div className="space-y-2">
+                <Label className="tracking-[0.14em]">来源筛选</Label>
+                <Select
+                  value={filters.origin || "__all__"}
+                  onValueChange={(value) =>
+                    setFilters((current) => ({
+                      ...current,
+                      origin: value === "__all__" ? "" : value,
+                    }))
+                  }
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="全部来源" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__all__">全部来源</SelectItem>
+                    <SelectItem value="codex-local">Codex 本地</SelectItem>
+                    <SelectItem value="openclaw-oauth">OpenClaw / OAuth</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label className="tracking-[0.14em]">创建日期</Label>
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button variant="outline" className="w-full justify-start font-normal">
+                      {formatLocalDateLabel(filters.createdDate)}
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-auto p-0" align="start">
+                    <Calendar
+                      mode="single"
+                      selected={parseDateValue(filters.createdDate)}
+                      onSelect={(date) =>
+                        setFilters((current) => ({
+                          ...current,
+                          createdDate: formatDateValue(date),
+                        }))
+                      }
+                      initialFocus
+                    />
+                    <div className="border-t p-3">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="w-full"
+                        onClick={() =>
+                          setFilters((current) => ({
+                            ...current,
+                            createdDate: "",
+                          }))
+                        }
+                      >
+                        清除日期
+                      </Button>
+                    </div>
+                  </PopoverContent>
+                </Popover>
+              </div>
+            </div>
+
+            <ScrollArea className="mt-4 overflow-hidden rounded-xl border">
+              <Table className="min-w-[1080px]">
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>会话ID</TableHead>
+                    <TableHead>标题</TableHead>
+                    <TableHead>来源</TableHead>
+                    <TableHead>模型</TableHead>
+                    <TableHead>状态</TableHead>
+                    <TableHead>创建时间</TableHead>
+                    <TableHead>消耗</TableHead>
+                    <TableHead>费用</TableHead>
+                    <TableHead>更新时间</TableHead>
+                    <TableHead className="text-right">详情</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {pageRows.length ? (
+                    pageRows.map((thread) => (
+                      <TableRow key={thread.id}>
+                        <TableCell className="mono max-w-[180px] break-all text-xs text-muted-foreground">{thread.id}</TableCell>
+                        <TableCell className="min-w-[260px]">
+                          <div className="line-clamp-2 font-semibold">{thread.titlePreview || thread.title || "(untitled)"}</div>
+                          <div className="mt-1 truncate text-xs text-muted-foreground">{thread.workspaceLabel || thread.cwd || "-"}</div>
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant={originBadgeVariant(thread.usageOrigin)}>{thread.usageOriginLabel || "Codex 本地"}</Badge>
+                        </TableCell>
+                        <TableCell>{formatModelLabel(thread.modelName)}</TableCell>
+                        <TableCell>
+                          <Badge variant={statusBadgeVariant(thread.statusLabel)}>{thread.statusLabel || "未知"}</Badge>
+                        </TableCell>
+                        <TableCell>{formatResetTime(thread.createdAt)}</TableCell>
+                        <TableCell className="mono">{formatTokenMillions(thread.tokensUsed)}</TableCell>
+                        <TableCell className="mono">{thread.cost ? formatUsd(thread.cost.totalUsd) : "-"}</TableCell>
+                        <TableCell>{formatResetTime(thread.updatedAt)}</TableCell>
+                        <TableCell className="text-right">
+                          <Button variant="outline" size="sm" onClick={() => setSelectedThreadId(thread.id)}>
+                            详情
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    ))
+                  ) : (
+                    <TableRow>
+                      <TableCell colSpan={10} className="text-center text-muted-foreground">
+                        没有符合条件的会话
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </TableBody>
+              </Table>
+            </ScrollArea>
+
+            <div className="mt-4 flex items-center justify-end gap-3 text-sm text-muted-foreground">
+              <Button variant="outline" size="sm" disabled={safePage <= 1} onClick={() => setSessionPage((page) => Math.max(1, page - 1))}>
+                上一页
+              </Button>
+              <span>第 {safePage} / {totalPages} 页</span>
+              <Button variant="outline" size="sm" disabled={safePage >= totalPages} onClick={() => setSessionPage((page) => page + 1)}>
+                下一页
+              </Button>
+            </div>
+          </TabsContent>
+
+          <TabsContent value="billing">
+            <div className="mt-4 flex flex-wrap items-center justify-between gap-4">
+              <Tabs value={billingScope} onValueChange={setBillingScope}>
+                <TabsList>
+                  <TabsTrigger value="cumulative">累计</TabsTrigger>
+                  <TabsTrigger value="month">自然月</TabsTrigger>
+                </TabsList>
+              </Tabs>
+
+              <div className="flex flex-wrap gap-2">
+                {[
+                  ["7", 7],
+                  ["30", 30],
+                  ["本月", "month"],
+                  ["全部", "all"],
+                ].map(([label, preset]) => (
+                  <Button
+                    key={label}
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      if (!scopeRows.length) {
+                        return;
+                      }
+
+                      const total = scopeRows.length - 1;
+                      if (preset === "all" || preset === "month") {
+                        setRange({ start: 0, end: total });
+                        return;
+                      }
+
+                      const count = Number(preset);
+                      setRange({ start: Math.max(0, total - count + 1), end: total });
+                    }}
+                  >
+                    {label}
+                  </Button>
+                ))}
+              </div>
+            </div>
+
+            <div className="mt-4 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+              <MetricTile label={`${billingScope === "month" ? "自然月" : "累计"}费用`} value={formatUsd(scopeSummary.totalUsd)} subvalue="当前统计范围" compact tone="muted" />
+              <MetricTile label={`${billingScope === "month" ? "自然月" : "累计"} Token`} value={formatTokenMillions(scopeSummary.totalTokens)} subvalue="当前统计范围" compact />
+              <MetricTile label="当前范围费用" value={formatUsd(visibleSummary.totalUsd)} subvalue={`${visibleLedgerRows.length} 天明细`} compact />
+              <MetricTile label="当前范围 Token" value={formatTokenMillions(visibleSummary.totalTokens)} subvalue={`${visibleLedgerRows[visibleLedgerRows.length - 1]?.day || "-"} -> ${visibleLedgerRows[0]?.day || "-"}`} compact />
+            </div>
+
+            <div className="mt-4 space-y-4">
+              {sessionsTab === "billing" ? <BillingChart rows={visibleLedgerRows} /> : null}
+              <div className="grid gap-3">
+                <div className="flex items-center justify-between gap-4 text-sm text-muted-foreground">
+                  <span>时间范围</span>
+                  <strong className="mono text-foreground">
+                    {`${visibleLedgerRows[visibleLedgerRows.length - 1]?.day || "-"} -> ${
+                      visibleLedgerRows[0]?.day || "-"
+                    }`}
+                  </strong>
+                </div>
+                <Slider
+                  min={0}
+                  max={Math.max(scopeRows.length - 1, 0)}
+                  step={1}
+                  value={[range.start, range.end ?? Math.max(scopeRows.length - 1, 0)]}
+                  disabled={!scopeRows.length}
+                  onValueChange={(values) => {
+                    const [rawStart = 0, rawEnd = 0] = values;
+                    setRange({
+                      start: Math.min(rawStart, rawEnd),
+                      end: Math.max(rawStart, rawEnd),
+                    });
+                  }}
+                  aria-label="账单时间范围"
+                />
+                <div className="flex items-center justify-between text-xs text-muted-foreground">
+                  <span>{scopeRows[scopeRows.length - 1]?.day || "-"}</span>
+                  <span>{scopeRows[0]?.day || "-"}</span>
+                </div>
+              </div>
+
+              <Card className="rounded-xl shadow-none">
+                <CardHeader className="pb-4">
+                  <CardTitle className="text-lg">账单明细</CardTitle>
+                  <CardDescription>{visibleLedgerRows.length ? `共 ${visibleLedgerRows.length} 天明细` : "当前范围暂无数据"}</CardDescription>
+                </CardHeader>
+                <CardContent className="pt-0">
+                  <ScrollArea className="overflow-hidden rounded-xl border">
+                    <Table className="min-w-[420px]">
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>日期</TableHead>
+                          <TableHead className="text-right">Token</TableHead>
+                          <TableHead className="text-right">费用</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {visibleLedgerRows.length ? (
+                          visibleLedgerRows.map((row) => (
+                            <TableRow key={row.day}>
+                              <TableCell>{row.day}</TableCell>
+                              <TableCell className="text-right mono">{formatTokenMillions(row.totalTokens)}</TableCell>
+                              <TableCell className="text-right mono">{formatUsd(row.totalUsd)}</TableCell>
+                            </TableRow>
+                          ))
+                        ) : (
+                          <TableRow>
+                            <TableCell colSpan={3} className="text-center text-muted-foreground">
+                              没有账单明细
+                            </TableCell>
+                          </TableRow>
+                        )}
+                      </TableBody>
+                    </Table>
+                  </ScrollArea>
+                </CardContent>
+              </Card>
+            </div>
+          </TabsContent>
+        </Tabs>
+      </SectionCard>
+
+      <SessionDetailDialog row={selectedThread} open={Boolean(selectedThread)} onOpenChange={(open) => !open && setSelectedThreadId(null)} />
+    </>
+  );
+}
+
+function OpenClawPanel({ snapshot }) {
+  const openclaw = snapshot.openclaw;
+  const leadModel = openclaw?.topModels?.[0] || null;
+
+  return (
+    <SectionCard title="OpenClaw / OAuth 经 Codex" description="通过 codexbar 聚合读取的 OAuth 侧 Codex 消耗" className="rounded-2xl h-fit">
+      {!openclaw ? (
+        <EmptyState>未读取到 OpenClaw / codexbar 数据。</EmptyState>
+      ) : (
+        <>
+          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-1">
+            <MetricTile label="当前 OAuth Session Token" value={formatTokenMillions(openclaw.session?.totalTokens)} subvalue={`当前费用 ${formatUsd(openclaw.session?.totalUsd)}`} />
+            <MetricTile label="近 30 天 OAuth Token" value={formatTokenMillions(openclaw.totals?.totalTokens)} subvalue={`近 30 天费用 ${formatUsd(openclaw.totals?.totalUsd)}`} tone="muted" />
+            <MetricTile label="当前配置模型" value={formatModelLabel(openclaw.configuredModel)} subvalue={leadModel ? `费用主模型 ${formatModelLabel(leadModel.modelName)} · ${formatUsd(leadModel.totalUsd)}` : "费用主模型 -"} compact tone="teal" />
+            <MetricTile label="数据来源" value={formatUsageSource(openclaw.source)} subvalue={openclaw.updatedAt ? `最近更新 ${new Date(openclaw.updatedAt).toLocaleString("zh-CN")}` : "更新时间不可用"} compact />
+          </div>
+
+          <div className="mt-4 grid gap-4 xl:grid-cols-1">
+            <Card className="rounded-xl shadow-none">
+              <CardHeader className="pb-4">
+                <CardTitle className="text-lg">按模型费用汇总</CardTitle>
+                <CardDescription>仅展示识别到的 GPT / ChatGPT 模型</CardDescription>
+              </CardHeader>
+              <CardContent className="pt-0">
+                <OpenClawCostTable rows={openclaw.topModels || []} />
+              </CardContent>
+            </Card>
+
+            <Card className="rounded-xl shadow-none">
+              <CardHeader className="pb-4">
+                <CardTitle className="text-lg">最近每日汇总</CardTitle>
+                <CardDescription>最近 7 天</CardDescription>
+              </CardHeader>
+              <CardContent className="pt-0">
+                <ScrollArea className="overflow-hidden rounded-xl border">
+                  <Table className="min-w-[360px]">
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>日期</TableHead>
+                        <TableHead className="text-right">Token</TableHead>
+                        <TableHead className="text-right">费用</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {(openclaw.daily || []).slice(0, 7).map((row) => (
+                        <TableRow key={row.day}>
+                          <TableCell>{row.day}</TableCell>
+                          <TableCell className="text-right mono">{formatTokenMillions(row.totalTokens)}</TableCell>
+                          <TableCell className="text-right mono">{formatUsd(row.totalUsd)}</TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </ScrollArea>
+              </CardContent>
+            </Card>
+          </div>
+        </>
+      )}
+    </SectionCard>
+  );
+}
+
+export default function App() {
+  const { snapshot, setSnapshot, connectionLabel, setConnectionLabel } = useDashboardSnapshot();
+  const [sourceView, setSourceView] = useState("codex");
+  const [codexHomeInput, setCodexHomeInput] = useState("");
+
+  useEffect(() => {
+    setCodexHomeInput(snapshot.sources?.codexHome || "");
+  }, [snapshot.sources?.codexHome]);
+
+  async function updateSource(nextCodexHome) {
+    const response = await fetch("/api/source", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        codexHome: nextCodexHome,
+      }),
+    });
+
+    const payload = await response.json();
+    if (!response.ok) {
+      throw new Error(payload.error || "更新数据目录失败");
+    }
+
+    setSnapshot(payload);
+    setConnectionLabel("实时中");
+  }
+
+  return (
+    <div className="mx-auto max-w-[1520px] space-y-5 px-4 py-6 md:px-6 lg:space-y-6 lg:px-8 lg:py-8">
+      <PageHeader
+        connectionLabel={connectionLabel}
+        connectionVariant={connectionBadgeVariant(connectionLabel)}
+        planLabel={formatPlanName(snapshot.live.rateLimits?.planType)}
+      />
+
+      <Separator />
+
+      <div className="lg:hidden">
+        <Tabs value={sourceView} onValueChange={setSourceView}>
+          <TabsList className="grid w-full grid-cols-2">
+            <TabsTrigger value="codex">Codex 本地</TabsTrigger>
+            <TabsTrigger value="openclaw">OpenClaw / OAuth</TabsTrigger>
+          </TabsList>
+        </Tabs>
+      </div>
+
+      <div className="grid gap-6 lg:grid-cols-[minmax(0,1.55fr)_minmax(320px,0.95fr)]">
+        <div className={cn(sourceView === "codex" ? "block" : "hidden", "space-y-6 lg:block")}>
+          <CodexDashboard
+            snapshot={snapshot}
+            connectionLabel={connectionLabel}
+            codexHomeInput={codexHomeInput}
+            onCodexHomeInputChange={setCodexHomeInput}
+            onApplySource={() => updateSource(codexHomeInput.trim())}
+            onResetSource={() => updateSource("").then(() => setCodexHomeInput(""))}
+          />
+        </div>
+
+        <div className={cn(sourceView === "openclaw" ? "block" : "hidden", "lg:block")}>
+          <OpenClawPanel snapshot={snapshot} />
+        </div>
+      </div>
+    </div>
+  );
+}

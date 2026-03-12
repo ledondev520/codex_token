@@ -1,40 +1,35 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const path = require("node:path");
+const { pathToFileURL } = require("node:url");
 
-const {
-  buildOpenClawModelTableMarkup,
-  formatTokenMillions,
-  formatPercent,
-  formatResetTime,
-  formatUsd,
-  getBillableInputTokens,
-  buildCombinedChartMarkup,
-  calculateResetProgress,
-  isRateLimitSnapshotStale,
-  formatModelLabel,
-  getScopeRows,
-  summarizeLedgerRows,
-  getVisibleLedgerRows,
-  getFilteredSessionRows,
-  getSessionPageRows,
-  getSessionPageCount,
-} = require("../public/app.js");
+let logic;
+
+test.before(async () => {
+  logic = await import(
+    pathToFileURL(
+      path.join(__dirname, "..", "src", "lib", "dashboard-logic.mjs")
+    ).href
+  );
+});
+
 const { estimateCost } = require("../server/lib/pricing");
 
 test("dashboard formatters render readable token and quota values", () => {
-  assert.equal(formatTokenMillions(35000000), "35M");
-  assert.equal(formatTokenMillions(5013157), "5.01M");
-  assert.equal(formatPercent(12), "12%");
-  assert.equal(formatUsd(0.005363), "$0.01");
-  assert.equal(formatUsd(12), "$12.00");
+  assert.equal(logic.formatTokenMillions(35000000), "35M");
+  assert.equal(logic.formatTokenMillions(5013157), "5.01M");
+  assert.equal(logic.formatPercent(12), "12%");
+  assert.equal(logic.formatUsd(0.005363), "$0.01");
+  assert.equal(logic.formatUsd(12), "$12.00");
   assert.match(
-    formatResetTime(1772950000),
+    logic.formatResetTime(1772950000),
     /2026|03|08|09/
   );
 });
 
 test("combined chart markup includes hover targets for token and cost values", () => {
-  const markup = buildCombinedChartMarkup([
+  const markup = logic.buildCombinedChartMarkup([
     { day: "2026-03-07", totalTokens: 1500000, totalUsd: 2.4 },
     { day: "2026-03-08", totalTokens: 2400000, totalUsd: 3.25 },
   ]);
@@ -48,7 +43,7 @@ test("combined chart markup includes hover targets for token and cost values", (
 });
 
 test("reset progress exposes elapsed and remaining percentages", () => {
-  const progress = calculateResetProgress({
+  const progress = logic.calculateResetProgress({
     generatedAt: "2026-03-08T05:30:00.000Z",
     resetsAt: 1772956800,
     windowMinutes: 300,
@@ -60,7 +55,7 @@ test("reset progress exposes elapsed and remaining percentages", () => {
 
 test("stale rate-limit snapshots are detected after the reset time passes", () => {
   assert.equal(
-    isRateLimitSnapshotStale({
+    logic.isRateLimitSnapshotStale({
       generatedAt: "2026-03-08T13:57:40.447Z",
       latestRateLimitAt: "2026-03-08T13:57:03.002Z",
       resetsAt: 1772977197,
@@ -69,7 +64,7 @@ test("stale rate-limit snapshots are detected after the reset time passes", () =
   );
 
   assert.equal(
-    isRateLimitSnapshotStale({
+    logic.isRateLimitSnapshotStale({
       generatedAt: "2026-03-08T13:30:00.000Z",
       latestRateLimitAt: "2026-03-08T13:20:00.000Z",
       resetsAt: 1772977197,
@@ -79,8 +74,8 @@ test("stale rate-limit snapshots are detected after the reset time passes", () =
 });
 
 test("gpt-5.4 codex alias is rendered as GPT-5.4", () => {
-  assert.equal(formatModelLabel("gpt-5.4-codex"), "GPT-5.4");
-  assert.equal(formatModelLabel("gpt-5.1-codex"), "gpt-5.1-codex");
+  assert.equal(logic.formatModelLabel("gpt-5.4-codex"), "GPT-5.4");
+  assert.equal(logic.formatModelLabel("gpt-5.1-codex"), "gpt-5.1-codex");
 });
 
 test("billing scope and range helpers support natural month and visible slices", () => {
@@ -90,13 +85,13 @@ test("billing scope and range helpers support natural month and visible slices",
     { day: "2026-02-28", totalTokens: 300000, totalUsd: 6 },
   ];
 
-  const monthRows = getScopeRows(rows, "2026-03-08T10:00:00.000Z", "month");
+  const monthRows = logic.getScopeRows(rows, "2026-03-08T10:00:00.000Z", "month");
   assert.deepEqual(monthRows.map((row) => row.day), ["2026-03-08", "2026-03-07"]);
 
-  const visibleRows = getVisibleLedgerRows(monthRows, 0, 1);
+  const visibleRows = logic.getVisibleLedgerRows(monthRows, 0, 1);
   assert.deepEqual(visibleRows.map((row) => row.day), ["2026-03-08", "2026-03-07"]);
 
-  const summary = summarizeLedgerRows(monthRows);
+  const summary = logic.summarizeLedgerRows(monthRows);
   assert.equal(summary.totalTokens, 900000);
   assert.equal(summary.totalUsd, 18);
 });
@@ -104,9 +99,9 @@ test("billing scope and range helpers support natural month and visible slices",
 test("session pagination returns 10 rows per page and computes total pages", () => {
   const rows = Array.from({ length: 23 }, (_, index) => ({ id: `thread-${index + 1}` }));
 
-  assert.equal(getSessionPageCount(rows, 10), 3);
+  assert.equal(logic.getSessionPageCount(rows, 10), 3);
   assert.deepEqual(
-    getSessionPageRows(rows, 2, 10).map((row) => row.id),
+    logic.getSessionPageRows(rows, 2, 10).map((row) => row.id),
     ["thread-11", "thread-12", "thread-13", "thread-14", "thread-15", "thread-16", "thread-17", "thread-18", "thread-19", "thread-20"]
   );
 });
@@ -127,7 +122,7 @@ test("session filters match title, model, and created date together", () => {
     },
   ];
 
-  const filtered = getFilteredSessionRows(rows, {
+  const filtered = logic.getFilteredSessionRows(rows, {
     title: "openclaw",
     model: "5.3",
     createdDate: "2026-03-07",
@@ -136,17 +131,32 @@ test("session filters match title, model, and created date together", () => {
   assert.deepEqual(filtered.map((row) => row.id), ["thread-2"]);
 });
 
+test("session filters can distinguish codex local rows from openclaw oauth rows", () => {
+  const rows = [
+    { id: "thread-1", title: "local", modelName: "gpt-5.4", createdAt: 1772940000, usageOrigin: "codex-local" },
+    { id: "thread-2", title: "oauth", modelName: "gpt-5.4", createdAt: 1772943600, usageOrigin: "openclaw-oauth" },
+  ];
+
+  const filtered = logic.getFilteredSessionRows(rows, {
+    origin: "openclaw-oauth",
+  });
+
+  assert.deepEqual(filtered.map((row) => row.id), ["thread-2"]);
+});
+
 test("openclaw model table markup renders model costs and fallback source state", () => {
-  const markup = buildOpenClawModelTableMarkup([
+  const markup = logic.buildOpenClawModelTableMarkup([
     { modelName: "gpt-5", totalUsd: 24.52151025 },
     { modelName: "gpt-5.3-codex", totalUsd: 4.31679775 },
   ]);
 
+  assert.match(markup, /<table/);
+  assert.match(markup, /<td>gpt-5<\/td>/);
   assert.match(markup, /gpt-5\.3-codex/);
   assert.match(markup, /\$24\.52/);
   assert.match(markup, /模型/);
 
-  const emptyMarkup = buildOpenClawModelTableMarkup([]);
+  const emptyMarkup = logic.buildOpenClawModelTableMarkup([]);
   assert.match(emptyMarkup, /暂无模型费用明细/);
 });
 
@@ -167,10 +177,58 @@ test("cost estimate charges cached input at cached rate instead of double chargi
 
 test("billable input tokens exclude cached input tokens", () => {
   assert.equal(
-    getBillableInputTokens({
+    logic.getBillableInputTokens({
       inputTokens: 6080000,
       cachedInputTokens: 5720000,
     }),
     360000
   );
+});
+
+test("dialog closes when the backdrop itself is clicked", () => {
+  const dialog = { nodeName: "DIALOG" };
+  assert.equal(logic.shouldCloseDialogFromBackdropClick(dialog, dialog), true);
+  assert.equal(logic.shouldCloseDialogFromBackdropClick(dialog, { nodeName: "DIV" }), false);
+});
+
+test("prompt summaries collapse whitespace and trim long prompts", () => {
+  assert.equal(logic.summarizePromptText("  第一行\n\n第二行  ", 20), "第一行 第二行");
+  assert.equal(
+    logic.summarizePromptText("这是一个很长的提示词，用来验证前端会先展示摘要而不是整段直接撑开布局。", 18),
+    "这是一个很长的提示词，用来验证..."
+  );
+});
+
+test("dashboard html exposes the refactored shadcn-style shell structure", () => {
+  const appSource = fs.readFileSync(path.join(__dirname, "..", "src", "App.jsx"), "utf8");
+
+  assert.match(appSource, /Codex 本地/);
+  assert.match(appSource, /OpenClaw \/ OAuth/);
+  assert.match(appSource, /来源筛选/);
+  assert.match(appSource, /SectionCard/);
+  assert.match(appSource, /TabsTrigger/);
+  assert.match(appSource, /Slider/);
+  assert.match(appSource, /EmptyState/);
+  assert.match(appSource, /Label/);
+  assert.doesNotMatch(appSource, /type="range"/);
+  assert.doesNotMatch(appSource, /border-dashed border-border p-4 text-sm text-muted-foreground/);
+});
+
+test("dashboard ui primitives avoid hard-coded slate palette classes", () => {
+  const uiFiles = [
+    path.join(__dirname, "..", "src", "components", "ui", "dialog.jsx"),
+    path.join(__dirname, "..", "src", "components", "ui", "progress.jsx"),
+    path.join(__dirname, "..", "src", "components", "ui", "slider.jsx"),
+    path.join(__dirname, "..", "src", "components", "ui", "skeleton.jsx"),
+    path.join(__dirname, "..", "src", "components", "dashboard", "metric-tile.jsx"),
+  ];
+
+  for (const filePath of uiFiles) {
+    const source = fs.readFileSync(filePath, "utf8");
+    assert.doesNotMatch(
+      source,
+      /\b(?:bg|text|border|fill|stroke)-slate-\d{2,3}\b/,
+      `${path.basename(filePath)} still contains hard-coded slate classes`
+    );
+  }
 });

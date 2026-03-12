@@ -1,0 +1,305 @@
+diff --git a/METRICS.md b/METRICS.md
+index e7ff213..baf8a01 100644
+--- a/METRICS.md
++++ b/METRICS.md
+@@ -1,6 +1,6 @@
+ # Metrics
+ 
+-Last updated: 2026-03-08 21:43 Asia/Shanghai
++Last updated: 2026-03-12 00:05 Asia/Shanghai
+ 
+ | Round | Metric | Value | Notes |
+ | --- | --- | --- | --- |
+@@ -38,3 +38,6 @@ Last updated: 2026-03-08 21:43 Asia/Shanghai
+ | 9 | HTTP smoke test | pass | `GET /api/snapshot` on `http://127.0.0.1:4328` returned `openclaw.source = local` and a top model |
+ | 10 | Launchd background service | active | `launchctl print gui/501/com.helena.codex-usage-dashboard` shows a running LaunchAgent on 2026-03-08 21:41 Asia/Shanghai |
+ | 10 | Fixed port 4329 | pass | `GET /` and `GET /api/snapshot` both succeeded on `http://127.0.0.1:4329` after bootstrap |
++| 11 | VPS reverse proxy | active | nginx is listening on `0.0.0.0:18080` on 2026-03-12 00:02 Asia/Shanghai |
++| 11 | Reverse tunnel reachability | pass | `curl http://127.0.0.1:14329/` succeeded on the VPS through the SSH reverse tunnel |
++| 11 | Public mobile preview | pass | `curl -u <preview-user>:<preview-pass> http://23.81.118.51:18080/` returned the dashboard HTML on 2026-03-12 00:02 Asia/Shanghai |
+diff --git a/PLAN.md b/PLAN.md
+index a1086ce..6731edb 100644
+--- a/PLAN.md
++++ b/PLAN.md
+@@ -1,6 +1,6 @@
+ # Codex Usage Dashboard Plan
+ 
+-Last updated: 2026-03-08 22:00 Asia/Shanghai
++Last updated: 2026-03-12 00:05 Asia/Shanghai
+ 
+ ## Goal
+ 
+@@ -21,6 +21,7 @@ Build a standalone local web dashboard in this workspace that reads `~/.codex` u
+ 11. Extend the dashboard with OpenClaw ChatGPT/Codex usage sourced from CodexBar local cost output. Completed.
+ 12. Install a fixed-port local background service on 4329. Completed.
+ 13. Mark stale rate-limit snapshots when reset time has passed. Completed.
++14. Expose the local dashboard through a VPS-backed reverse tunnel for phone access. Completed.
+ 
+ ## Architecture
+ 
+@@ -48,6 +49,7 @@ Build a standalone local web dashboard in this workspace that reads `~/.codex` u
+ - Fall back to the most recent non-null rate-limit snapshot when the newest session event omits quota data.
+ - Merge per-thread token/model/limit fields by timestamp so newer partial files do not wipe older non-null snapshots.
+ - Cache OpenClaw usage reads and degrade to `null` when `codexbar` is unavailable so the rest of the dashboard stays live.
++- Keep the dashboard bound to loopback on the Mac and expose phone access through a reverse SSH tunnel terminated by the VPS reverse proxy.
+ 
+ ## Current Phase
+ 
+@@ -60,3 +62,4 @@ Build a standalone local web dashboard in this workspace that reads `~/.codex` u
+ - OpenClaw / ChatGPT usage is now integrated as a separate panel backed by `codexbar cost`, filtered to GPT / ChatGPT models, with top-model and recent-daily summaries.
+ - The dashboard is now managed by `launchctl` so `127.0.0.1:4329` stays stable without relying on this chat session.
+ - Rate-limit cards are being clarified so an expired local snapshot is shown as stale rather than looking like a failed reset.
++- A VPS preview path is now maintained separately from the app process so mobile access can be enabled without moving local Codex data onto the server.
+diff --git a/README.md b/README.md
+index a0f5c78..db3cead 100644
+--- a/README.md
++++ b/README.md
+@@ -6,86 +6,176 @@
+ 
+ # Codex Usage Dashboard
+ 
+-A standalone local dashboard for Codex token usage and quota snapshots.
++A local dashboard for inspecting Codex usage, quota snapshots, model pricing, and estimated cost from files on your own machine.
+ 
+-## What It Does
++This project is designed to stay local-first:
++- it reads usage data from local Codex files
++- it serves a local web UI
++- it does not require a cloud backend for the dashboard itself
+ 
+-- Reads local Codex usage data from `~/.codex`
+-- Lets you switch the scanned local Codex folder from the dashboard UI
+-- Aggregates SQLite history and recent session JSONL events
+-- Serves a local dashboard with live updates
+-- Shows token usage, quota snapshots, grouped model pricing, and daily cost estimates
++## Features
++
++- Read Codex usage data from `~/.codex`
++- Aggregate SQLite history and session JSONL events
++- Show live quota snapshots and reset windows
++- Estimate costs by model pricing
++- Browse all sessions with filters, pagination, and detail drill-down
++- Show billing trends with time-range controls
++- Optionally include OpenClaw / ChatGPT usage from `codexbar`
++- Support switching the scanned Codex folder from the UI
++
++## How It Works
++
++Data sources currently used by the app:
++- `~/.codex/state_5.sqlite`
++- `~/.codex/sessions/**/*.jsonl`
++- `~/.codex/archived_sessions/**/*.jsonl`
++- `codexbar cost --provider codex --format json` for OpenClaw-related usage when available
+ 
+ ## Run Locally
+ 
+ ```bash
+-npm install
+ npm test
+ npm start
+ ```
+ 
+-Then open `http://127.0.0.1:4318`.
++Then open:
++
++```text
++http://127.0.0.1:4329
++```
++
++## Background Service
++
++This repository also includes a macOS `launchd` setup for keeping the dashboard alive on port `4329`.
++
++Relevant files:
++- `scripts/run-dashboard.sh`
++- `launchd/com.helena.codex-usage-dashboard.plist`
++
++## VPS Preview Access
++
++If you want to inspect the local dashboard from your phone, do not deploy the app itself to a VPS and expect it to show your Mac's local Codex data.
++
++Instead, keep the dashboard running locally and expose it through a reverse tunnel:
++
++```text
++phone -> VPS public port -> VPS reverse proxy -> SSH reverse tunnel -> local 127.0.0.1:4329
++```
++
++This repository now includes a macOS launchd helper for the tunnel:
++- `scripts/run-vps-preview-tunnel.sh`
++- `launchd/com.helena.codex-usage-dashboard-vps-preview.plist`
++
++The default tunnel target is:
++- VPS: `23.81.118.51`
++- remote loopback port: `14329`
++- local dashboard port: `4329`
++
++This setup lets the VPS act as a public entrypoint while the dashboard itself continues reading your local `~/.codex` data on your Mac.
+ 
+ ## Project Structure
+ 
+-- `server/`: HTTP app, usage aggregation, live snapshot service
+-- `public/`: Static dashboard assets
+-- `test/`: Repository, API, and frontend tests
+-- `docs/`: Implementation notes
++- `public/`: static frontend
++- `server/`: HTTP server and snapshot loaders
++- `test/`: automated tests
++- `docs/`: implementation notes and plans
++- `launchd/`: macOS background service config
++- `RESULTS/`, `PATCHES/`, `logs/`: checkpoint artifacts created during development
+ 
+-## Contributing
++## Privacy
++
++This app reads local files that may contain sensitive prompts, paths, titles, token counts, and cost-related metadata.
++
++Before publishing screenshots, sample data, or recordings, make sure you review and redact anything sensitive.
+ 
+-Contributions are welcome! If you'd like to improve the project, please open an issue or submit a pull request.
++## Contributing
+ 
+-## Note on Privacy
++Issues and pull requests are welcome.
+ 
+-This app reads local files under `~/.codex`. Please be mindful of this when publishing your own screenshots or sharing sample data, as it may contain sensitive usage information.
++If you plan to contribute:
++- keep changes local-first
++- avoid adding cloud dependencies unless clearly optional
++- preserve the ability to run the dashboard from local files only
+ 
+ ## License
+ 
+-This project is licensed under the [MIT License](LICENSE).
++[MIT](LICENSE)
+ 
+ ---
+ 
+ <span id="简体中文"></span>
+ 
+-# Codex 使用量仪表盘 (Codex Usage Dashboard)
++# Codex 用量统计
++
++这是一个本地优先的 Codex 用量看板，用来读取你自己机器上的数据文件，展示会话、额度、模型价格、Token 消耗和费用估算。
+ 
+-一个在本地独立运行的仪表盘，用于查看 Codex Token 使用情况及配额快照。
++这个项目准备公开仓库，因此 README 现在按“别人拿到仓库后能快速理解和运行”的方式组织。
+ 
+ ## 功能特性
+ 
+-- 从 `~/.codex` 读取本地 Codex 使用数据
+-- 支持在仪表盘里切换要读取的本地 Codex 文件夹
+-- 聚合 SQLite 历史记录与最近的会话 JSONL 事件
+-- 启动一个支持实时更新的本地仪表盘服务
+-- 展示 Token 使用量、配额快照、合并后的模型价格以及每日预估成本
++- 从 `~/.codex` 读取 Codex 本地使用数据
++- 聚合 SQLite 历史记录和 session JSONL 事件
++- 展示额度窗口、重置时间和限制快照
++- 按模型价格估算费用
++- 展示全部会话，支持筛选、分页和详情查看
++- 展示账单走势，并支持时间范围切换
++- 在可用时接入 `codexbar` 的 OpenClaw / ChatGPT 用量
++- 支持从页面切换要扫描的 Codex 数据目录
++
++## 当前数据来源
++
++项目目前会读取这些本地来源：
++- `~/.codex/state_5.sqlite`
++- `~/.codex/sessions/**/*.jsonl`
++- `~/.codex/archived_sessions/**/*.jsonl`
++- `codexbar cost --provider codex --format json`
+ 
+ ## 本地运行
+ 
+ ```bash
+-npm install
+ npm test
+ npm start
+ ```
+ 
+-然后打开浏览器访问 `http://127.0.0.1:4318`。
++启动后打开：
++
++```text
++http://127.0.0.1:4329
++```
++
++## 后台常驻
++
++仓库里已经提供 macOS `launchd` 配置，用来把服务固定运行在 `4329` 端口。
++
++相关文件：
++- `scripts/run-dashboard.sh`
++- `launchd/com.helena.codex-usage-dashboard.plist`
+ 
+ ## 项目结构
+ 
+-- `server/`: HTTP 应用、使用量聚合相关逻辑、实时快照服务
+-- `public/`: 仪表盘静态资源
+-- `test/`: 数据层、API 以及前端的测试用例
+-- `docs/`: 实现相关的文档笔记
++- `public/`: 前端静态页面
++- `server/`: HTTP 服务、快照加载和数据聚合
++- `test/`: 自动化测试
++- `docs/`: 计划和实现文档
++- `launchd/`: macOS 常驻服务配置
++- `RESULTS/`、`PATCHES/`、`logs/`: 开发过程中的检查点产物
++
++## 隐私说明
++
++这个项目会读取你本地的提示词、目录路径、会话标题、Token 数量和费用相关信息。
+ 
+-## 贡献指南
++如果你准备公开截图、录屏、示例数据或者仓库说明，请先确认已经处理掉敏感信息。
+ 
+-欢迎各位贡献代码！如果您希望改进该项目，请随时提交 Issue 或发起 Pull Request。
++## 贡献说明
+ 
+-## 隐私注意事项
++欢迎提交 Issue 和 Pull Request。
+ 
+-此应用会读取位于 `~/.codex` 下的本地文件。在您公开分享仪表盘截图或示例数据时，请务必注意保护由于使用产生的一些潜在敏感信息。
++如果你准备贡献：
++- 优先保持本地优先设计
++- 不要默认引入云端依赖
++- 保持“只靠本地文件也能运行”的能力
+ 
+-## 开源协议
++## 许可证
+ 
+-本项目基于 [MIT 协议](LICENSE) 开源。
++[MIT](LICENSE)
+diff --git a/RISKS.md b/RISKS.md
+index 87d43b6..899d38c 100644
+--- a/RISKS.md
++++ b/RISKS.md
+@@ -1,6 +1,6 @@
+ # Risks
+ 
+-Last updated: 2026-03-08 21:43 Asia/Shanghai
++Last updated: 2026-03-12 00:05 Asia/Shanghai
+ 
+ | ID | Risk | Trigger | Mitigation | Rollback |
+ | --- | --- | --- | --- | --- |
+@@ -13,3 +13,5 @@ Last updated: 2026-03-08 21:43 Asia/Shanghai
+ | R7 | Ledger range controls can become confusing when the selected scope has few days | switching from cumulative to month shrinks the available time window | reset/clamp slider bounds per scope and show explicit selected date labels | revert to fixed presets only if manual range controls prove too error-prone |
+ | R8 | First background full refresh still does heavy synchronous log parsing | large local session history | keep the heavy work off the request path and always return cached/placeholder snapshots first | move full parsing to a worker or persisted cache if history grows further |
+ | R9 | LaunchAgent reload may fail if a stray manual process already holds port 4329 | previous ad-hoc `node server/index.js` still listening | kill the existing listener before `launchctl bootstrap` and verify with `launchctl print` + `lsof` | boot out the LaunchAgent and restart manually |
++| R10 | Public preview traffic is HTTP-only when using a raw VPS IP | user opens the dashboard over `http://<vps-ip>:18080` on mobile networks | treat the VPS preview as temporary, use strong credentials, and move to a domain + HTTPS when available | disable the nginx site on `18080` and unload the tunnel launch agent |
++| R11 | Reverse tunnel can drop when the Mac sleeps or changes network | mobile preview stops updating or returns `502` from the VPS | keep the tunnel under `launchd` with SSH keepalives so it auto-restarts after disconnects | manually relaunch the tunnel or unload the preview agent if it loops |
+diff --git a/TASKS.md b/TASKS.md
+index 0636ed5..001c38c 100644
+--- a/TASKS.md
++++ b/TASKS.md
+@@ -1,6 +1,6 @@
+ # Tasks
+ 
+-Last updated: 2026-03-08 22:00 Asia/Shanghai
++Last updated: 2026-03-12 00:05 Asia/Shanghai
+ 
+ | ID | Priority | Est | Slot | Status | Task | Input | Output | Validation | DoD |
+ | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+@@ -21,3 +21,4 @@ Last updated: 2026-03-08 22:00 Asia/Shanghai
+ | T15 | P0 | 15m | 1 | DONE | Install fixed-port background service on 4329 | current app + local macOS launchd | repo-local launch script, launchd plist, loaded user job on 4329 | `launchctl print`, `curl http://127.0.0.1:4329/` | dashboard survives this chat session and stays reachable on 4329 |
+ | T16 | P0 | 20m | 1 | DONE | Move full snapshot refresh off the main thread | current background refresh path | child-process snapshot loader, responsive HTTP loop, regression tests | `npm test` and latency spot-check on 4329 | static and snapshot endpoints stay fast even during full refresh |
+ | T17 | P0 | 10m | 1 | DONE | Mark stale limit snapshots after reset time | current quota card rendering | stale reset hint, non-misleading progress state, regression tests | `npm test` and browser/API spot-check | expired local quota snapshots are labeled as stale instead of looking like a failed reset |
++| T18 | P0 | 20m | 1 | DONE | Expose the local dashboard through a VPS preview tunnel | running local dashboard + reachable VPS | VPS reverse proxy, SSH key auth, launchd tunnel agent, access docs, evidence files | local `curl`, remote `curl`, `launchctl print` | phone-access path reaches the Mac-hosted dashboard without copying local Codex data to the VPS |

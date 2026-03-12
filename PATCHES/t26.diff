@@ -1,0 +1,1359 @@
+diff --git a/METRICS.md b/METRICS.md
+index e7ff213..d38014c 100644
+--- a/METRICS.md
++++ b/METRICS.md
+@@ -1,6 +1,6 @@
+ # Metrics
+ 
+-Last updated: 2026-03-08 21:43 Asia/Shanghai
++Last updated: 2026-03-12 22:32 Asia/Shanghai
+ 
+ | Round | Metric | Value | Notes |
+ | --- | --- | --- | --- |
+@@ -38,3 +38,27 @@ Last updated: 2026-03-08 21:43 Asia/Shanghai
+ | 9 | HTTP smoke test | pass | `GET /api/snapshot` on `http://127.0.0.1:4328` returned `openclaw.source = local` and a top model |
+ | 10 | Launchd background service | active | `launchctl print gui/501/com.helena.codex-usage-dashboard` shows a running LaunchAgent on 2026-03-08 21:41 Asia/Shanghai |
+ | 10 | Fixed port 4329 | pass | `GET /` and `GET /api/snapshot` both succeeded on `http://127.0.0.1:4329` after bootstrap |
++| 11 | VPS reverse proxy | active | nginx is listening on `0.0.0.0:18080` on 2026-03-12 00:02 Asia/Shanghai |
++| 11 | Reverse tunnel reachability | pass | `curl http://127.0.0.1:14329/` succeeded on the VPS through the SSH reverse tunnel |
++| 11 | Public mobile preview | pass | `curl -u <preview-user>:<preview-pass> http://23.81.118.51:18080/` returned the dashboard HTML on 2026-03-12 00:02 Asia/Shanghai |
++| 12 | Public mobile preview without auth | pass | `curl http://23.81.118.51:18080/` returned the dashboard HTML on 2026-03-12 00:06 Asia/Shanghai |
++| 13 | Automated tests | 23 passing | `npm test` on 2026-03-12 20:38 Asia/Shanghai after the shadcn-style layout refactor |
++| 13 | Browser smoke test | pass | Playwright snapshot on `http://127.0.0.1:4318/` confirmed the new shell, stats, quota cards, sessions table, and OpenClaw side panel render together |
++| 13 | Layout refactor | complete | static HTML/CSS now uses topbar + main stack + side panel while preserving existing render IDs and tab/filter hooks |
++| 14 | Automated tests | 26 passing | `npm test` on 2026-03-12 20:57 Asia/Shanghai after source classification, prompt summaries, and shadcn-semantics cleanup |
++| 14 | Browser smoke test | pass | Playwright verified the new `来源` column/filter, `Codex 本地` vs `OpenClaw / OAuth` badges, and prompt summary dialog on `http://127.0.0.1:4329/` |
++| 14 | Token source split | enabled | session rows and the live-current card now expose local-Codex vs OpenClaw/OAuth usage labels based on local thread metadata |
++| 15 | Automated tests | 27 passing | `npm test` on 2026-03-12 21:19 Asia/Shanghai after mobile density, user-turn extraction, fee-table cleanup, and live refresh race fix |
++| 15 | Mobile source tabs | enabled | Playwright verified a mobile-width `Codex 本地` / `OpenClaw / OAuth` switcher on `http://127.0.0.1:4329/` |
++| 15 | User-turn detail view | enabled | session detail now shows each captured local user turn from `event_msg.user_message`, not just the latest prompt summary |
++| 16 | Frontend migration | complete | React + Vite + Tailwind + local shadcn components now generate the served `public/` app on 2026-03-12 21:40 Asia/Shanghai |
++| 16 | Automated tests | 27 passing | `npm test` on 2026-03-12 21:40 Asia/Shanghai after the React/Vite migration |
++| 16 | Browser console errors | 0 | Playwright console capture on `http://127.0.0.1:4329/` after the built React frontend loaded |
++| 17 | Additional shadcn primitives | enabled | local `Select`, `Skeleton`, and `Separator` components were wired into the React dashboard on 2026-03-12 21:47 Asia/Shanghai |
++| 17 | Automated tests | 27 passing | `npm test` on 2026-03-12 21:47 Asia/Shanghai after the shadcn post-migration polish pass |
++| 17 | Browser console errors | 0 | Playwright console capture on `http://127.0.0.1:4329/` remained clean after adding the new primitives |
++| 18 | Runtime build alignment | enabled | `npm start` and `scripts/run-dashboard.sh` now rebuild the React frontend before serving on 2026-03-12 22:23 Asia/Shanghai |
++| 18 | Automated tests | 27 passing | `npm test` on 2026-03-12 22:23 Asia/Shanghai after startup/build pipeline alignment |
++| 19 | Alias alignment | enabled | `jsconfig.json` and `vite.config.mjs` now expose the same `@ -> src` mapping as `components.json` on 2026-03-12 22:32 Asia/Shanghai |
++| 19 | HTTP method coverage | enabled | root HTML, static assets, and `/api/snapshot` now answer `HEAD` as well as `GET` |
++| 19 | Automated tests | 27 passing | `npm test` on 2026-03-12 22:32 Asia/Shanghai after alias + HTTP behavior cleanup |
+diff --git a/PLAN.md b/PLAN.md
+index a1086ce..5c3e5d7 100644
+--- a/PLAN.md
++++ b/PLAN.md
+@@ -1,6 +1,6 @@
+ # Codex Usage Dashboard Plan
+ 
+-Last updated: 2026-03-08 22:00 Asia/Shanghai
++Last updated: 2026-03-12 22:32 Asia/Shanghai
+ 
+ ## Goal
+ 
+@@ -21,11 +21,20 @@ Build a standalone local web dashboard in this workspace that reads `~/.codex` u
+ 11. Extend the dashboard with OpenClaw ChatGPT/Codex usage sourced from CodexBar local cost output. Completed.
+ 12. Install a fixed-port local background service on 4329. Completed.
+ 13. Mark stale rate-limit snapshots when reset time has passed. Completed.
++14. Expose the local dashboard through a VPS-backed reverse tunnel for phone access. Completed.
++15. Remove Basic Auth from the temporary VPS preview entrypoint at user request. Completed.
++16. Rework the dashboard layout toward a shadcn/ui-style information architecture without changing data bindings. Completed.
++17. Separate Codex-local usage from OpenClaw/OAuth-driven usage in the UI, reduce prompt verbosity, and tighten shadcn/ui semantics. Completed.
++18. Optimize mobile density, clean residual copy, convert odd model-fee blocks into table semantics, and expose per-turn user messages in session detail. Completed.
++19. Migrate the frontend from static HTML/CSS/JS to a real React + Vite + Tailwind + local shadcn/ui component project. Completed.
++20. Tighten shadcn authenticity with local Select/Skeleton/Separator components and improve first-load UX. Completed.
++21. Make the build pipeline part of the actual runtime path so serving and launchd always use the latest React frontend. Completed.
++22. Close remaining project-level gaps after the migration: alias support, proper HEAD responses, and HTTP regression coverage. Completed.
+ 
+ ## Architecture
+ 
+ - Backend: Node.js HTTP server with Express, SQLite reader, session JSONL reader, and SSE streaming.
+-- Frontend: static HTML/CSS/JS served by the backend.
++- Frontend: React + Vite + Tailwind + local shadcn component source built into `public/` and served by the backend.
+ - Data sources:
+   - `~/.codex/state_5.sqlite`
+   - `~/.codex/sessions/**/*.jsonl`
+@@ -48,6 +57,8 @@ Build a standalone local web dashboard in this workspace that reads `~/.codex` u
+ - Fall back to the most recent non-null rate-limit snapshot when the newest session event omits quota data.
+ - Merge per-thread token/model/limit fields by timestamp so newer partial files do not wipe older non-null snapshots.
+ - Cache OpenClaw usage reads and degrade to `null` when `codexbar` is unavailable so the rest of the dashboard stays live.
++- Keep the dashboard bound to loopback on the Mac and expose phone access through a reverse SSH tunnel terminated by the VPS reverse proxy.
++- Keep a clear record when public-access protections are relaxed so the exposure level is obvious on resume.
+ 
+ ## Current Phase
+ 
+@@ -60,3 +71,13 @@ Build a standalone local web dashboard in this workspace that reads `~/.codex` u
+ - OpenClaw / ChatGPT usage is now integrated as a separate panel backed by `codexbar cost`, filtered to GPT / ChatGPT models, with top-model and recent-daily summaries.
+ - The dashboard is now managed by `launchctl` so `127.0.0.1:4329` stays stable without relying on this chat session.
+ - Rate-limit cards are being clarified so an expired local snapshot is shown as stale rather than looking like a failed reset.
++- A VPS preview path is now maintained separately from the app process so mobile access can be enabled without moving local Codex data onto the server.
++- The VPS preview endpoint is temporarily open without Basic Auth at the user's request, which trades convenience for substantially weaker privacy.
++- The frontend layout now uses a more shadcn/ui-like shell: top status bar, main content stack, right-side supporting panel, neutral surfaces, and preserved DOM IDs for the existing JS render pipeline.
++- Session rows are now classified as `Codex 本地` vs `OpenClaw / OAuth` using local thread metadata, the sessions table exposes a source filter, and long prompt/title text is summarized before rendering while the full prompt remains available on demand.
++- Mobile now switches between `Codex 本地` and `OpenClaw / OAuth` views through source tabs, the OpenClaw model-fee area uses a real table, and session detail now lists each captured user turn from local event logs.
++- The live snapshot service now guards against stale background refreshes overwriting a newly selected `codexHome`.
++- The frontend now builds from `src/` through Vite into `public/`, uses local shadcn-style components under `src/components/ui/`, and no longer depends on the legacy imperative `public/app.js` architecture.
++- The React frontend now uses additional local shadcn-style primitives (`Select`, `Skeleton`, `Separator`) so filter controls and first-load states rely less on raw HTML elements and empty zero-value placeholders.
++- Default startup now rebuilds the client before serving, and the launchd entrypoint does the same, so the runtime is aligned with the migrated React/Vite frontend rather than assuming `public/` is already fresh.
++- Vite and editor aliasing now match `components.json`, and the HTTP server correctly answers `HEAD` for the root page, static assets, and snapshot endpoint instead of treating them as unsupported.
+diff --git a/README.md b/README.md
+index a0f5c78..0812e97 100644
+--- a/README.md
++++ b/README.md
+@@ -6,86 +6,186 @@
+ 
+ # Codex Usage Dashboard
+ 
+-A standalone local dashboard for Codex token usage and quota snapshots.
++A local dashboard for inspecting Codex usage, quota snapshots, model pricing, and estimated cost from files on your own machine.
+ 
+-## What It Does
++This project is designed to stay local-first:
++- it reads usage data from local Codex files
++- it serves a local web UI
++- it does not require a cloud backend for the dashboard itself
+ 
+-- Reads local Codex usage data from `~/.codex`
+-- Lets you switch the scanned local Codex folder from the dashboard UI
+-- Aggregates SQLite history and recent session JSONL events
+-- Serves a local dashboard with live updates
+-- Shows token usage, quota snapshots, grouped model pricing, and daily cost estimates
++## Features
++
++- Read Codex usage data from `~/.codex`
++- Aggregate SQLite history and session JSONL events
++- Show live quota snapshots and reset windows
++- Estimate costs by model pricing
++- Browse all sessions with filters, pagination, and detail drill-down
++- Show billing trends with time-range controls
++- Optionally include OpenClaw / ChatGPT usage from `codexbar`
++- Support switching the scanned Codex folder from the UI
++
++## How It Works
++
++Data sources currently used by the app:
++- `~/.codex/state_5.sqlite`
++- `~/.codex/sessions/**/*.jsonl`
++- `~/.codex/archived_sessions/**/*.jsonl`
++- `codexbar cost --provider codex --format json` for OpenClaw-related usage when available
+ 
+ ## Run Locally
+ 
+ ```bash
+-npm install
+ npm test
+ npm start
+ ```
+ 
+-Then open `http://127.0.0.1:4318`.
++Then open:
++
++```text
++http://127.0.0.1:4329
++```
++
++## Background Service
++
++This repository also includes a macOS `launchd` setup for keeping the dashboard alive on port `4329`.
++
++Relevant files:
++- `scripts/run-dashboard.sh`
++- `launchd/com.helena.codex-usage-dashboard.plist`
++
++## VPS Preview Access
++
++If you want to inspect the local dashboard from your phone, do not deploy the app itself to a VPS and expect it to show your Mac's local Codex data.
++
++Instead, keep the dashboard running locally and expose it through a reverse tunnel:
++
++```text
++phone -> VPS public port -> VPS reverse proxy -> SSH reverse tunnel -> local 127.0.0.1:4329
++```
++
++This repository now includes a macOS launchd helper for the tunnel:
++- `scripts/run-vps-preview-tunnel.sh`
++- `launchd/com.helena.codex-usage-dashboard-vps-preview.plist`
++
++The default tunnel target is:
++- VPS: `23.81.118.51`
++- remote loopback port: `14329`
++- local dashboard port: `4329`
++
++This setup lets the VPS act as a public entrypoint while the dashboard itself continues reading your local `~/.codex` data on your Mac.
++
++Current preview entrypoint:
++
++```text
++http://23.81.118.51:18080/
++```
++
++The current VPS config does not require authentication. Anyone who can reach that IP and port can load the dashboard, so this should be treated as a temporary convenience setup rather than a hardened deployment.
+ 
+ ## Project Structure
+ 
+-- `server/`: HTTP app, usage aggregation, live snapshot service
+-- `public/`: Static dashboard assets
+-- `test/`: Repository, API, and frontend tests
+-- `docs/`: Implementation notes
++- `src/`: React + Tailwind + local shadcn component source
++- `public/`: built frontend assets emitted by Vite
++- `server/`: HTTP server and snapshot loaders
++- `test/`: automated tests
++- `docs/`: implementation notes and plans
++- `launchd/`: macOS background service config
++- `RESULTS/`, `PATCHES/`, `logs/`: checkpoint artifacts created during development
+ 
+-## Contributing
++## Privacy
+ 
+-Contributions are welcome! If you'd like to improve the project, please open an issue or submit a pull request.
++This app reads local files that may contain sensitive prompts, paths, titles, token counts, and cost-related metadata.
+ 
+-## Note on Privacy
++Before publishing screenshots, sample data, or recordings, make sure you review and redact anything sensitive.
+ 
+-This app reads local files under `~/.codex`. Please be mindful of this when publishing your own screenshots or sharing sample data, as it may contain sensitive usage information.
++## Contributing
++
++Issues and pull requests are welcome.
++
++If you plan to contribute:
++- keep changes local-first
++- avoid adding cloud dependencies unless clearly optional
++- preserve the ability to run the dashboard from local files only
+ 
+ ## License
+ 
+-This project is licensed under the [MIT License](LICENSE).
++[MIT](LICENSE)
+ 
+ ---
+ 
+ <span id="简体中文"></span>
+ 
+-# Codex 使用量仪表盘 (Codex Usage Dashboard)
++# Codex 用量统计
+ 
+-一个在本地独立运行的仪表盘，用于查看 Codex Token 使用情况及配额快照。
++这是一个本地优先的 Codex 用量看板，用来读取你自己机器上的数据文件，展示会话、额度、模型价格、Token 消耗和费用估算。
++
++这个项目准备公开仓库，因此 README 现在按“别人拿到仓库后能快速理解和运行”的方式组织。
+ 
+ ## 功能特性
+ 
+-- 从 `~/.codex` 读取本地 Codex 使用数据
+-- 支持在仪表盘里切换要读取的本地 Codex 文件夹
+-- 聚合 SQLite 历史记录与最近的会话 JSONL 事件
+-- 启动一个支持实时更新的本地仪表盘服务
+-- 展示 Token 使用量、配额快照、合并后的模型价格以及每日预估成本
++- 从 `~/.codex` 读取 Codex 本地使用数据
++- 聚合 SQLite 历史记录和 session JSONL 事件
++- 展示额度窗口、重置时间和限制快照
++- 按模型价格估算费用
++- 展示全部会话，支持筛选、分页和详情查看
++- 展示账单走势，并支持时间范围切换
++- 在可用时接入 `codexbar` 的 OpenClaw / ChatGPT 用量
++- 支持从页面切换要扫描的 Codex 数据目录
++
++## 当前数据来源
++
++项目目前会读取这些本地来源：
++- `~/.codex/state_5.sqlite`
++- `~/.codex/sessions/**/*.jsonl`
++- `~/.codex/archived_sessions/**/*.jsonl`
++- `codexbar cost --provider codex --format json`
+ 
+ ## 本地运行
+ 
+ ```bash
+-npm install
+ npm test
+ npm start
+ ```
+ 
+-然后打开浏览器访问 `http://127.0.0.1:4318`。
++启动后打开：
++
++```text
++http://127.0.0.1:4329
++```
++
++## 后台常驻
++
++仓库里已经提供 macOS `launchd` 配置，用来把服务固定运行在 `4329` 端口。
++
++相关文件：
++- `scripts/run-dashboard.sh`
++- `launchd/com.helena.codex-usage-dashboard.plist`
+ 
+ ## 项目结构
+ 
+-- `server/`: HTTP 应用、使用量聚合相关逻辑、实时快照服务
+-- `public/`: 仪表盘静态资源
+-- `test/`: 数据层、API 以及前端的测试用例
+-- `docs/`: 实现相关的文档笔记
++- `src/`: React + Tailwind + 本地 shadcn 组件源码
++- `public/`: Vite 构建输出的前端产物
++- `server/`: HTTP 服务、快照加载和数据聚合
++- `test/`: 自动化测试
++- `docs/`: 计划和实现文档
++- `launchd/`: macOS 常驻服务配置
++- `RESULTS/`、`PATCHES/`、`logs/`: 开发过程中的检查点产物
++
++## 隐私说明
++
++这个项目会读取你本地的提示词、目录路径、会话标题、Token 数量和费用相关信息。
+ 
+-## 贡献指南
++如果你准备公开截图、录屏、示例数据或者仓库说明，请先确认已经处理掉敏感信息。
+ 
+-欢迎各位贡献代码！如果您希望改进该项目，请随时提交 Issue 或发起 Pull Request。
++## 贡献说明
+ 
+-## 隐私注意事项
++欢迎提交 Issue 和 Pull Request。
+ 
+-此应用会读取位于 `~/.codex` 下的本地文件。在您公开分享仪表盘截图或示例数据时，请务必注意保护由于使用产生的一些潜在敏感信息。
++如果你准备贡献：
++- 优先保持本地优先设计
++- 不要默认引入云端依赖
++- 保持“只靠本地文件也能运行”的能力
+ 
+-## 开源协议
++## 许可证
+ 
+-本项目基于 [MIT 协议](LICENSE) 开源。
++[MIT](LICENSE)
+diff --git a/RISKS.md b/RISKS.md
+index 87d43b6..973a363 100644
+--- a/RISKS.md
++++ b/RISKS.md
+@@ -1,6 +1,6 @@
+ # Risks
+ 
+-Last updated: 2026-03-08 21:43 Asia/Shanghai
++Last updated: 2026-03-12 22:32 Asia/Shanghai
+ 
+ | ID | Risk | Trigger | Mitigation | Rollback |
+ | --- | --- | --- | --- | --- |
+@@ -13,3 +13,13 @@ Last updated: 2026-03-08 21:43 Asia/Shanghai
+ | R7 | Ledger range controls can become confusing when the selected scope has few days | switching from cumulative to month shrinks the available time window | reset/clamp slider bounds per scope and show explicit selected date labels | revert to fixed presets only if manual range controls prove too error-prone |
+ | R8 | First background full refresh still does heavy synchronous log parsing | large local session history | keep the heavy work off the request path and always return cached/placeholder snapshots first | move full parsing to a worker or persisted cache if history grows further |
+ | R9 | LaunchAgent reload may fail if a stray manual process already holds port 4329 | previous ad-hoc `node server/index.js` still listening | kill the existing listener before `launchctl bootstrap` and verify with `launchctl print` + `lsof` | boot out the LaunchAgent and restart manually |
++| R10 | Public preview traffic is HTTP-only when using a raw VPS IP | user opens the dashboard over `http://<vps-ip>:18080` on mobile networks | treat the VPS preview as temporary and move to a domain + HTTPS when available | disable the nginx site on `18080` and unload the tunnel launch agent |
++| R11 | Reverse tunnel can drop when the Mac sleeps or changes network | mobile preview stops updating or returns `502` from the VPS | keep the tunnel under `launchd` with SSH keepalives so it auto-restarts after disconnects | manually relaunch the tunnel or unload the preview agent if it loops |
++| R12 | Public preview is now completely unauthenticated | anyone who finds `23.81.118.51:18080` can read dashboard data | treat this as short-lived only; if privacy matters, restore auth or move to HTTPS with an allowlist or VPN | re-add Basic Auth to nginx or shut down the preview endpoint |
++| R13 | The denser shadcn-style layout still contains wide data tables on small screens | mobile viewport narrower than the session/billing table minimum width | keep responsive stacking for panels and preserve horizontal scroll wrappers around tables | collapse columns or move session detail into cards if mobile browsing becomes a top priority |
++| R14 | OpenClaw/OAuth source classification currently uses local thread metadata heuristics | future OpenClaw runs stop using `~/.openclaw` workspaces or write different `cwd` patterns | keep the label explicit as a heuristic and update the classifier if a stronger local signal appears in thread/session metadata | fall back to an “未知入口” label instead of pretending the split is exact |
++| R15 | Per-turn user messages currently come only from local `event_msg.user_message` records | a future Codex log format omits those events or moves user turns elsewhere | prefer `event_msg.user_message` to avoid duplicated boilerplate, and extend extraction if a new stable field appears | fall back to latest prompt summary only instead of showing duplicated or polluted turn history |
++| R16 | The frontend build now depends on Yarn 4 PnP and a Vite compile step before serving updated UI code | user edits `src/` but does not run `npm run build:client` or `npm test`, leaving `public/` stale | keep the build output path explicit in scripts and use `npm test` to rebuild before verification | rerun `npm run build:client` to refresh `public/`, or temporarily inspect the React source directly if the built output is stale |
++| R17 | The React app intentionally renders a local placeholder snapshot before the first async fetch resolves | browser opens the page and briefly shows empty/loading values before `/api/snapshot` or SSE hydrates | use skeleton tiles and explicit connection badges so the temporary state reads as loading rather than broken data | if this remains visually distracting, block initial render on the first fetch at the cost of slower first paint |
++| R18 | Launchd startup now includes a frontend rebuild step | Vite build fails under launchd due to dependency or environment drift, preventing the dashboard from starting | keep the build command deterministic (`corepack yarn vite build`) and verify with `npm test` whenever the frontend toolchain changes | temporarily run the last successful built `public/` bundle by restoring the simpler start command if launchd build failures block service recovery |
++| R19 | Alias support now depends on both Vite and editor configuration staying aligned | future refactors change one alias path but not the other, causing IDE/import drift | keep `vite.config.mjs`, `jsconfig.json`, and `components.json` in sync when aliases move | revert to relative imports until alias configuration is repaired |
+diff --git a/TASKS.md b/TASKS.md
+index 0636ed5..6bb08f7 100644
+--- a/TASKS.md
++++ b/TASKS.md
+@@ -1,6 +1,6 @@
+ # Tasks
+ 
+-Last updated: 2026-03-08 22:00 Asia/Shanghai
++Last updated: 2026-03-12 22:32 Asia/Shanghai
+ 
+ | ID | Priority | Est | Slot | Status | Task | Input | Output | Validation | DoD |
+ | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+@@ -21,3 +21,12 @@ Last updated: 2026-03-08 22:00 Asia/Shanghai
+ | T15 | P0 | 15m | 1 | DONE | Install fixed-port background service on 4329 | current app + local macOS launchd | repo-local launch script, launchd plist, loaded user job on 4329 | `launchctl print`, `curl http://127.0.0.1:4329/` | dashboard survives this chat session and stays reachable on 4329 |
+ | T16 | P0 | 20m | 1 | DONE | Move full snapshot refresh off the main thread | current background refresh path | child-process snapshot loader, responsive HTTP loop, regression tests | `npm test` and latency spot-check on 4329 | static and snapshot endpoints stay fast even during full refresh |
+ | T17 | P0 | 10m | 1 | DONE | Mark stale limit snapshots after reset time | current quota card rendering | stale reset hint, non-misleading progress state, regression tests | `npm test` and browser/API spot-check | expired local quota snapshots are labeled as stale instead of looking like a failed reset |
++| T18 | P0 | 20m | 1 | DONE | Expose the local dashboard through a VPS preview tunnel | running local dashboard + reachable VPS | VPS reverse proxy, SSH key auth, launchd tunnel agent, access docs, evidence files | local `curl`, remote `curl`, `launchctl print` | phone-access path reaches the Mac-hosted dashboard without copying local Codex data to the VPS |
++| T19 | P0 | 10m | 1 | DONE | Remove Basic Auth from the temporary VPS preview entrypoint | existing VPS reverse proxy on `18080` | unauthenticated nginx site, updated docs, evidence files | public `curl`, `npm test` | mobile preview loads directly from the raw VPS IP without username/password prompts |
++| T20 | P0 | 20m | 1 | DONE | Refactor dashboard layout to a shadcn/ui-style shell | current static dashboard frontend | new app shell, neutral panel system, regression test for layout markers, checkpoint docs | `npm test` and browser smoke on `http://127.0.0.1:4318/` | layout is visibly restructured without breaking existing IDs, tabs, filters, or snapshot rendering |
++| T21 | P0 | 20m | 1 | DONE | Distinguish Codex-local vs OpenClaw/OAuth usage, reduce prompt verbosity, and tighten shadcn semantics | current dashboard frontend + local thread metadata | source classification on sessions/live card, source filter, prompt summary/full view, flatter shadcn-style card semantics, regression tests, checkpoint docs | `npm test` and Playwright smoke on `http://127.0.0.1:4329/` | users can tell which token usage came from local Codex vs OpenClaw/OAuth, long prompts no longer blow up the UI, and the layout is closer to actual shadcn/ui component structure |
++| T22 | P0 | 20m | 1 | DONE | Fix mobile density, clean residual copy, repair model-fee tables, show per-turn user messages, and harden source switching | current dashboard UI + live snapshot service | mobile source tabs, denser mobile cards, table-based OpenClaw fee summary, session user-turn list, stale-refresh guard, regression tests, checkpoint docs | `npm test` and Playwright smoke on `http://127.0.0.1:4329/` | phone view is denser and easier to browse, no leftover odd helper copy remains, model fees read as tables, session detail shows local user turns, and switching data directories no longer races back to the old source |
++| T23 | P0 | 30m | 1 | DONE | Migrate frontend to a real shadcn/ui-style React project | existing Node API + static frontend | React/Vite/Tailwind app in `src/`, local shadcn component source, Vite build to `public`, updated tests, checkpoint docs | `npm test` and Playwright smoke on `http://127.0.0.1:4329/` | frontend is now built from React source with local shadcn components instead of the legacy static `public/app.js` implementation |
++| T24 | P1 | 15m | 1 | DONE | Tighten post-migration shadcn polish with more primitives and better loading states | migrated React frontend | local Select/Skeleton/Separator components, filter control refactor, skeleton first-load tiles, checkpoint docs | `npm test` and Playwright console/browser smoke on `http://127.0.0.1:4329/` | migrated UI uses more actual shadcn-style components, initial load is less jarring, and build/test/browser verification stays green |
++| T25 | P1 | 10m | 1 | DONE | Align runtime startup with the migrated build pipeline | React/Vite frontend + launchd start path | startup scripts rebuild before serving, updated docs/checkpoints | `npm test` and local startup script review | launchd and CLI startup both serve the latest built React frontend instead of stale `public/` artifacts |
++| T26 | P1 | 10m | 1 | DONE | Close post-migration project gaps in aliasing and HTTP behavior | migrated React/Vite project + Node server | `jsconfig.json`, Vite alias, `HEAD` support, HTTP regression tests, checkpoint docs | `npm test` | editor/Vite alias resolution matches shadcn config, and the server behaves correctly for both `GET` and `HEAD` requests on core routes |
+diff --git a/package.json b/package.json
+index a13fce8..f62168a 100644
+--- a/package.json
++++ b/package.json
+@@ -1,11 +1,36 @@
+ {
+   "name": "codex-usage-dashboard",
++  "private": true,
+   "version": "0.1.0",
+   "license": "MIT",
+   "description": "Standalone local dashboard for Codex token usage and quota snapshots.",
+   "scripts": {
+-    "start": "node server/index.js",
+-    "dev": "node --watch server/index.js",
+-    "test": "node --test"
++    "start": "npm run build:client && node server/index.js",
++    "dev": "npm run build:client && node --watch server/index.js",
++    "build:client": "corepack yarn vite build",
++    "build": "npm run build:client",
++    "test": "npm run build:client && node --test"
++  },
++  "packageManager": "yarn@4.9.1",
++  "dependencies": {
++    "@radix-ui/react-accordion": "^1.2.12",
++    "@radix-ui/react-dialog": "^1.1.15",
++    "@radix-ui/react-scroll-area": "^1.2.10",
++    "@radix-ui/react-select": "^2.2.6",
++    "@radix-ui/react-separator": "^1.1.8",
++    "@radix-ui/react-slot": "^1.2.4",
++    "@radix-ui/react-tabs": "^1.1.13",
++    "class-variance-authority": "^0.7.1",
++    "clsx": "^2.1.1",
++    "lucide-react": "^0.577.0",
++    "react": "^19.2.4",
++    "react-dom": "^19.2.4",
++    "tailwind-merge": "^3.5.0"
++  },
++  "devDependencies": {
++    "@tailwindcss/vite": "^4.2.1",
++    "@vitejs/plugin-react": "^5.1.4",
++    "tailwindcss": "^4.2.1",
++    "vite": "^7.3.1"
+   }
+-}
+\ No newline at end of file
++}
+diff --git a/scripts/run-dashboard.sh b/scripts/run-dashboard.sh
+index 5f624ae..38795a3 100755
+--- a/scripts/run-dashboard.sh
++++ b/scripts/run-dashboard.sh
+@@ -8,4 +8,5 @@ export PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+ export CODEXBAR_BIN="/opt/homebrew/bin/codexbar"
+ 
+ cd "$REPO_DIR"
++corepack yarn vite build >/dev/null
+ exec env HOST=127.0.0.1 PORT=4329 "$NODE_BIN" server/index.js
+diff --git a/server/app.js b/server/app.js
+index c05f4d3..c42c657 100644
+--- a/server/app.js
++++ b/server/app.js
+@@ -20,6 +20,14 @@ function sendJson(response, statusCode, payload) {
+   response.end(JSON.stringify(payload));
+ }
+ 
++function sendJsonHead(response, statusCode) {
++  response.writeHead(statusCode, {
++    "content-type": "application/json; charset=utf-8",
++    "cache-control": "no-store",
++  });
++  response.end();
++}
++
+ function sendNotFound(response) {
+   sendJson(response, 404, { error: "Not found" });
+ }
+@@ -40,6 +48,59 @@ function serveStaticFile(response, filePath) {
+   response.end(fs.readFileSync(filePath));
+ }
+ 
++function serveStaticHead(response, filePath) {
++  if (!fs.existsSync(filePath)) {
++    sendNotFound(response);
++    return;
++  }
++
++  const extname = path.extname(filePath);
++  const mimeType = MIME_TYPES[extname] || "text/plain; charset=utf-8";
++
++  response.writeHead(200, {
++    "content-type": mimeType,
++    "cache-control": "no-store",
++  });
++  response.end();
++}
++
++function buildInitialSnapshotScript(snapshot) {
++  return `<script>window.__INITIAL_SNAPSHOT__=${JSON.stringify(snapshot).replace(
++    /</g,
++    "\\u003c"
++  )}</script>`;
++}
++
++function serveIndexHtml(response, filePath, snapshot) {
++  if (!fs.existsSync(filePath)) {
++    sendNotFound(response);
++    return;
++  }
++
++  const html = fs
++    .readFileSync(filePath, "utf8")
++    .replace("<!--app-initial-snapshot-->", buildInitialSnapshotScript(snapshot));
++
++  response.writeHead(200, {
++    "content-type": "text/html; charset=utf-8",
++    "cache-control": "no-store",
++  });
++  response.end(html);
++}
++
++function serveIndexHead(response, filePath) {
++  if (!fs.existsSync(filePath)) {
++    sendNotFound(response);
++    return;
++  }
++
++  response.writeHead(200, {
++    "content-type": "text/html; charset=utf-8",
++    "cache-control": "no-store",
++  });
++  response.end();
++}
++
+ function readJsonBody(request) {
+   return new Promise((resolve, reject) => {
+     let body = "";
+@@ -76,6 +137,11 @@ function createAppServer(options = {}) {
+       return;
+     }
+ 
++    if (request.method === "HEAD" && url.pathname === "/api/snapshot") {
++      sendJsonHead(response, 200);
++      return;
++    }
++
+     if (request.method === "GET" && url.pathname === "/api/stream") {
+       response.writeHead(200, {
+         "content-type": "text/event-stream; charset=utf-8",
+@@ -112,7 +178,16 @@ function createAppServer(options = {}) {
+     }
+ 
+     if (request.method === "GET" && (url.pathname === "/" || url.pathname === "/index.html")) {
+-      serveStaticFile(response, path.join(publicDir, "index.html"));
++      serveIndexHtml(
++        response,
++        path.join(publicDir, "index.html"),
++        liveSnapshotService.getCurrentSnapshot()
++      );
++      return;
++    }
++
++    if (request.method === "HEAD" && (url.pathname === "/" || url.pathname === "/index.html")) {
++      serveIndexHead(response, path.join(publicDir, "index.html"));
+       return;
+     }
+ 
+@@ -122,6 +197,12 @@ function createAppServer(options = {}) {
+       return;
+     }
+ 
++    if (request.method === "HEAD") {
++      const requestedPath = path.normalize(url.pathname).replace(/^(\.\.[/\\])+/, "");
++      serveStaticHead(response, path.join(publicDir, requestedPath));
++      return;
++    }
++
+     sendNotFound(response);
+   });
+ }
+diff --git a/server/lib/liveSnapshotService.js b/server/lib/liveSnapshotService.js
+index 29a6331..01a49c4 100644
+--- a/server/lib/liveSnapshotService.js
++++ b/server/lib/liveSnapshotService.js
+@@ -13,6 +13,7 @@ function createLiveSnapshotService(options = {}) {
+   let latestSnapshot = createPlaceholderSnapshot();
+   let warmupScheduled = false;
+   let fullRefreshScheduled = false;
++  let snapshotGeneration = 0;
+ 
+   function createPlaceholderSnapshot() {
+     return {
+@@ -49,36 +50,44 @@ function createLiveSnapshotService(options = {}) {
+     }
+   }
+ 
+-  async function loadFastSnapshot() {
++  async function loadFastSnapshot(generation = snapshotGeneration) {
+     const snapshot = await loadSnapshotFn({
+       ...runtimeOptions,
+       skipSessionParsing: true,
+     });
++    if (generation !== snapshotGeneration) {
++      return latestSnapshot;
++    }
++
+     latestSnapshot = { ...snapshot, loading: true };
+     emitSnapshot(latestSnapshot);
+     return latestSnapshot;
+   }
+ 
+-  async function refresh() {
++  async function refresh(generation = snapshotGeneration) {
+     latestSnapshotPromise = loadSnapshotInBackgroundFn({
+       ...runtimeOptions,
+       recentSessionFileLimit: runtimeOptions.recentSessionFileLimit || 40,
+       ledgerFileLimit: runtimeOptions.ledgerFileLimit || 217,
+     });
+     const snapshot = await latestSnapshotPromise;
++    if (generation !== snapshotGeneration) {
++      return latestSnapshot;
++    }
++
+     latestSnapshot = { ...snapshot, loading: false };
+     emitSnapshot(latestSnapshot);
+     return latestSnapshot;
+   }
+ 
+-  function scheduleBackgroundRefresh() {
++  function scheduleBackgroundRefresh(generation = snapshotGeneration) {
+     if (fullRefreshScheduled) {
+       return;
+     }
+ 
+     fullRefreshScheduled = true;
+     setTimeout(() => {
+-      refresh().catch(() => {});
++      refresh(generation).catch(() => {});
+     }, 0);
+   }
+ 
+@@ -90,15 +99,19 @@ function createLiveSnapshotService(options = {}) {
+     warmupScheduled = true;
+     latestSnapshot = latestSnapshot || createPlaceholderSnapshot();
+ 
++    const generation = snapshotGeneration;
++
+     setTimeout(async () => {
+       try {
+-        latestSnapshotPromise = loadFastSnapshot();
++        latestSnapshotPromise = loadFastSnapshot(generation);
+         await latestSnapshotPromise;
+       } catch {
+-        latestSnapshot = createPlaceholderSnapshot();
++        if (generation === snapshotGeneration) {
++          latestSnapshot = createPlaceholderSnapshot();
++        }
+       } finally {
+         latestSnapshotPromise = null;
+-        scheduleBackgroundRefresh();
++        scheduleBackgroundRefresh(generation);
+       }
+     }, 0);
+   }
+@@ -127,6 +140,7 @@ function createLiveSnapshotService(options = {}) {
+   }
+ 
+   async function setCodexHome(codexHome) {
++    snapshotGeneration += 1;
+     runtimeOptions.codexHome = codexHome;
+     latestSnapshotPromise = null;
+     latestSnapshot = createPlaceholderSnapshot();
+diff --git a/server/lib/usageRepository.js b/server/lib/usageRepository.js
+index 85c0682..2a61a6c 100644
+--- a/server/lib/usageRepository.js
++++ b/server/lib/usageRepository.js
+@@ -47,6 +47,7 @@ function getRecentThreads(stateDbPath, limit = null) {
+     `
+       SELECT
+         id,
++        source,
+         title,
+         cwd,
+         model_provider,
+@@ -61,6 +62,7 @@ function getRecentThreads(stateDbPath, limit = null) {
+ 
+   return rows.map((row) => ({
+     id: row.id,
++    source: row.source,
+     title: row.title,
+     cwd: row.cwd,
+     modelProvider: row.model_provider,
+@@ -70,6 +72,60 @@ function getRecentThreads(stateDbPath, limit = null) {
+   }));
+ }
+ 
++function normalizeInlineText(value) {
++  return String(value || "").replace(/\s+/g, " ").trim();
++}
++
++function summarizeTitle(value, maxLength = 80) {
++  const normalized = normalizeInlineText(value);
++  if (!normalized) {
++    return "";
++  }
++
++  if (normalized.length <= maxLength) {
++    return normalized;
++  }
++
++  return `${normalized.slice(0, Math.max(0, maxLength - 3)).trimEnd()}...`;
++}
++
++function formatWorkspaceLabel(cwd) {
++  const normalized = String(cwd || "").trim();
++  if (!normalized) {
++    return "-";
++  }
++
++  const basename = path.basename(normalized) || normalized;
++  if (normalized.includes("/.openclaw/")) {
++    return `${basename} · ~/.openclaw`;
++  }
++
++  return basename;
++}
++
++function classifyUsageOrigin({ cwd, source }) {
++  const normalizedCwd = String(cwd || "").trim();
++  const normalizedSource = String(source || "").trim().toLowerCase();
++
++  if (
++    normalizedCwd.includes("/.openclaw/") ||
++    normalizedCwd.includes("\\.openclaw\\") ||
++    normalizedSource === "oauth"
++  ) {
++    return {
++      kind: "openclaw-oauth",
++      label: "OpenClaw / OAuth",
++      description: "通过 OpenClaw 工作区触发，底层仍消耗 Codex token",
++    };
++  }
++
++  return {
++    kind: "codex-local",
++    label: "Codex 本地",
++    description: "直接来自 ~/.codex 的本地线程与会话日志",
++  };
++}
++
+ function getDailyUsage(stateDbPath, days = 14) {
+   const rows = runSqliteJson(
+     stateDbPath,
+@@ -217,6 +273,32 @@ function getThreadIdFromFilePath(filePath) {
+   return match ? match[1] : basename;
+ }
+ 
++function normalizeSessionStatus(statusType) {
++  if (statusType === "task_complete") {
++    return "已完结";
++  }
++
++  if (statusType === "turn_aborted") {
++    return "已中断";
++  }
++
++  if (statusType === "user_message" || statusType === "task_started") {
++    return "等待回答";
++  }
++
++  if (
++    statusType === "agent_message" ||
++    statusType === "token_count" ||
++    statusType === "reasoning" ||
++    statusType === "function_call" ||
++    statusType === "function_call_output"
++  ) {
++    return "进行中";
++  }
++
++  return null;
++}
++
+ function extractSessionDetails(filePath, options = {}) {
+   const content = fs.readFileSync(filePath, "utf8");
+   const lines = content.split("\n").filter(Boolean);
+@@ -234,6 +316,9 @@ function extractSessionDetails(filePath, options = {}) {
+     modelAt: null,
+     promptText: null,
+     promptAt: null,
++    userMessages: [],
++    statusLabel: null,
++    statusAt: null,
+     ledgerEntries: [],
+     modelsUsed: [],
+   };
+@@ -271,7 +356,13 @@ function extractSessionDetails(filePath, options = {}) {
+         details.promptText = promptText;
+         details.promptAt = parsed.timestamp || details.promptAt;
+         details.latestTimestamp = parsed.timestamp || details.latestTimestamp;
++        details.userMessages.push({
++          timestamp: parsed.timestamp || null,
++          text: promptText,
++        });
+       }
++      details.statusLabel = normalizeSessionStatus("user_message") || details.statusLabel;
++      details.statusAt = parsed.timestamp || details.statusAt;
+       continue;
+     }
+ 
+@@ -293,6 +384,25 @@ function extractSessionDetails(filePath, options = {}) {
+           cost,
+         });
+       }
++      details.statusLabel = normalizeSessionStatus("token_count") || details.statusLabel;
++      details.statusAt = parsed.timestamp || details.statusAt;
++      continue;
++    }
++
++    if (parsed.type === "event_msg" && (parsed.payload?.type === "task_complete" || parsed.payload?.type === "task_started" || parsed.payload?.type === "agent_message" || parsed.payload?.type === "turn_aborted")) {
++      details.statusLabel = normalizeSessionStatus(parsed.payload.type) || details.statusLabel;
++      details.statusAt = parsed.timestamp || details.statusAt;
++      details.latestTimestamp = parsed.timestamp || details.latestTimestamp;
++      continue;
++    }
++
++    if (parsed.type === "response_item") {
++      const responseStatus = normalizeSessionStatus(parsed.payload?.type);
++      if (responseStatus) {
++        details.statusLabel = responseStatus;
++        details.statusAt = parsed.timestamp || details.statusAt;
++        details.latestTimestamp = parsed.timestamp || details.latestTimestamp;
++      }
+     }
+   }
+ 
+@@ -300,7 +410,13 @@ function extractSessionDetails(filePath, options = {}) {
+   details.cost = estimateCost(details.tokenUsage, details.modelName);
+   details.modelsUsed = Array.from(modelSet);
+ 
+-  if (!details.tokenUsage && !details.rateLimits && !details.modelName) {
++  if (
++    !details.tokenUsage &&
++    !details.rateLimits &&
++    !details.modelName &&
++    !details.promptText &&
++    !details.statusLabel
++  ) {
+     return null;
+   }
+ 
+@@ -322,6 +438,21 @@ function mergeSessionDetails(existing, incoming) {
+   const incomingModelTime = new Date(incoming.modelAt || 0).getTime();
+   const existingPromptTime = new Date(existing.promptAt || 0).getTime();
+   const incomingPromptTime = new Date(incoming.promptAt || 0).getTime();
++  const existingStatusTime = new Date(existing.statusAt || 0).getTime();
++  const incomingStatusTime = new Date(incoming.statusAt || 0).getTime();
++  const mergedUserMessages = [
++    ...(existing.userMessages || []),
++    ...(incoming.userMessages || []),
++  ]
++    .filter((message) => message?.text)
++    .sort(
++      (left, right) =>
++        new Date(left.timestamp || 0).getTime() - new Date(right.timestamp || 0).getTime()
++    )
++    .filter((message, index, rows) => {
++      const key = `${message.timestamp || ""}:${message.text}`;
++      return rows.findIndex((candidate) => `${candidate.timestamp || ""}:${candidate.text}` === key) === index;
++    });
+   const merged = {
+     ...existing,
+     ...incoming,
+@@ -358,6 +489,15 @@ function mergeSessionDetails(existing, incoming) {
+       incoming.promptText && incomingPromptTime >= existingPromptTime
+         ? incoming.promptAt
+         : existing.promptAt,
++    userMessages: mergedUserMessages,
++    statusLabel:
++      incoming.statusLabel && incomingStatusTime >= existingStatusTime
++        ? incoming.statusLabel
++        : existing.statusLabel,
++    statusAt:
++      incoming.statusLabel && incomingStatusTime >= existingStatusTime
++        ? incoming.statusAt
++        : existing.statusAt,
+   };
+ 
+   merged.cost = estimateCost(merged.tokenUsage, merged.modelName);
+@@ -463,6 +603,7 @@ function getLatestLiveEvent(sessionMap) {
+   return {
+     currentSession: latestTokenUsage
+       ? {
++          threadId: latestTokenUsage.threadId,
+           timestamp: latestTokenUsage.latestTimestamp,
+           filePath: latestTokenUsage.filePath,
+           tokenUsage: latestTokenUsage.tokenUsage,
+@@ -512,16 +653,28 @@ async function loadSnapshot(options = {}) {
+   const recentThreads = getRecentThreads(paths.stateDbPath, options.recentThreadsLimit).map(
+     (thread) => {
+       const sessionDetails = recentSessionMap.get(thread.id);
++      const usageOrigin = classifyUsageOrigin(thread);
+       return {
+         ...thread,
++        titlePreview: summarizeTitle(thread.title),
++        workspaceLabel: formatWorkspaceLabel(thread.cwd),
++        usageOrigin: usageOrigin.kind,
++        usageOriginLabel: usageOrigin.label,
++        usageOriginDescription: usageOrigin.description,
+         modelName: sessionDetails?.modelName || null,
+         promptText: sessionDetails?.promptText || null,
++        userMessages: sessionDetails?.userMessages || [],
++        statusLabel: sessionDetails?.statusLabel || "未知",
+         tokenUsage: sessionDetails?.tokenUsage || null,
+         cost: sessionDetails?.cost || null,
+       };
+     }
+   );
++  const threadsById = new Map(recentThreads.map((thread) => [thread.id, thread]));
+   const dailyUsage = getDailyUsage(paths.stateDbPath, options.dailyUsageLimit || 14);
++  const liveThread = latestLiveEvent.currentSession?.threadId
++    ? threadsById.get(latestLiveEvent.currentSession.threadId)
++    : null;
+ 
+   return {
+     generatedAt: (options.now || new Date()).toISOString(),
+@@ -538,10 +691,12 @@ async function loadSnapshot(options = {}) {
+     live: {
+       currentSession: latestLiveEvent.currentSession
+         ? {
+-            ...latestLiveEvent.currentSession.tokenUsage,
+-            modelName: latestLiveEvent.currentSession.modelName,
+-            cost: latestLiveEvent.currentSession.cost,
+-          }
++          ...latestLiveEvent.currentSession.tokenUsage,
++          modelName: latestLiveEvent.currentSession.modelName,
++          cost: latestLiveEvent.currentSession.cost,
++          usageOrigin: liveThread?.usageOrigin || "codex-local",
++          usageOriginLabel: liveThread?.usageOriginLabel || "Codex 本地",
++        }
+         : null,
+       rateLimits: latestLiveEvent.rateLimits?.rateLimits || null,
+       latestEventAt: latestLiveEvent.currentSession?.timestamp || null,
+@@ -555,6 +710,7 @@ async function loadSnapshot(options = {}) {
+ }
+ 
+ module.exports = {
++  classifyUsageOrigin,
+   loadSnapshot,
+   normalizeTokenUsage,
+   normalizeRateLimits,
+diff --git a/test/app.test.js b/test/app.test.js
+index 7dddc93..8e43f74 100644
+--- a/test/app.test.js
++++ b/test/app.test.js
+@@ -158,23 +158,30 @@ test("snapshot endpoint returns normalized JSON and stream endpoint exposes SSE"
+     assert.equal(pageResponse.status, 200);
+     assert.match(pageResponse.headers.get("content-type"), /text\/html/);
+     const pageHtml = await pageResponse.text();
+-    assert.match(pageHtml, /tab-trigger/);
+-    assert.match(pageHtml, /data-billing-scope="month"/);
+-    assert.match(pageHtml, /账单明细/);
+-    assert.match(pageHtml, /时间范围/);
+-    assert.match(pageHtml, /全部会话/);
+-    assert.match(pageHtml, /会话ID/);
+-    assert.match(pageHtml, /创建时间/);
+-    assert.match(pageHtml, /详情/);
+-    assert.match(pageHtml, /按标题筛选/);
+-    assert.match(pageHtml, /按模型筛选/);
+-    assert.match(pageHtml, /创建日期/);
+-    assert.match(pageHtml, /Codex用量统计/);
+-
+-    const assetResponse = await fetch(`http://127.0.0.1:${port}/app.js`);
++    assert.match(pageHtml, /<div id="root"><\/div>/);
++    assert.match(pageHtml, /\/assets\/index-/);
++    assert.match(pageHtml, /window\.__INITIAL_SNAPSHOT__/);
++    assert.doesNotMatch(pageHtml, /按 shadcn\/ui 文档里的 Card/);
++
++    const assetMatch = pageHtml.match(/src="(\/assets\/[^"]+\.js)"/);
++    assert.ok(assetMatch);
++
++    const assetResponse = await fetch(`http://127.0.0.1:${port}${assetMatch[1]}`);
+     assert.equal(assetResponse.status, 200);
+     assert.match(assetResponse.headers.get("content-type"), /application\/javascript/);
+ 
++    const headPageResponse = await fetch(`http://127.0.0.1:${port}/`, {
++      method: "HEAD",
++    });
++    assert.equal(headPageResponse.status, 200);
++    assert.match(headPageResponse.headers.get("content-type"), /text\/html/);
++
++    const headSnapshotResponse = await fetch(`http://127.0.0.1:${port}/api/snapshot`, {
++      method: "HEAD",
++    });
++    assert.equal(headSnapshotResponse.status, 200);
++    assert.match(headSnapshotResponse.headers.get("content-type"), /application\/json/);
++
+     const updateResponse = await fetch(`http://127.0.0.1:${port}/api/source`, {
+       method: "POST",
+       headers: {
+diff --git a/test/dashboardView.test.js b/test/dashboardView.test.js
+index 0f31c73..4be2533 100644
+--- a/test/dashboardView.test.js
++++ b/test/dashboardView.test.js
+@@ -1,40 +1,35 @@
+ const test = require("node:test");
+ const assert = require("node:assert/strict");
++const fs = require("node:fs");
++const path = require("node:path");
++const { pathToFileURL } = require("node:url");
++
++let logic;
++
++test.before(async () => {
++  logic = await import(
++    pathToFileURL(
++      path.join(__dirname, "..", "src", "lib", "dashboard-logic.mjs")
++    ).href
++  );
++});
+ 
+-const {
+-  buildOpenClawModelTableMarkup,
+-  formatTokenMillions,
+-  formatPercent,
+-  formatResetTime,
+-  formatUsd,
+-  getBillableInputTokens,
+-  buildCombinedChartMarkup,
+-  calculateResetProgress,
+-  isRateLimitSnapshotStale,
+-  formatModelLabel,
+-  getScopeRows,
+-  summarizeLedgerRows,
+-  getVisibleLedgerRows,
+-  getFilteredSessionRows,
+-  getSessionPageRows,
+-  getSessionPageCount,
+-} = require("../public/app.js");
+ const { estimateCost } = require("../server/lib/pricing");
+ 
+ test("dashboard formatters render readable token and quota values", () => {
+-  assert.equal(formatTokenMillions(35000000), "35M");
+-  assert.equal(formatTokenMillions(5013157), "5.01M");
+-  assert.equal(formatPercent(12), "12%");
+-  assert.equal(formatUsd(0.005363), "$0.01");
+-  assert.equal(formatUsd(12), "$12.00");
++  assert.equal(logic.formatTokenMillions(35000000), "35M");
++  assert.equal(logic.formatTokenMillions(5013157), "5.01M");
++  assert.equal(logic.formatPercent(12), "12%");
++  assert.equal(logic.formatUsd(0.005363), "$0.01");
++  assert.equal(logic.formatUsd(12), "$12.00");
+   assert.match(
+-    formatResetTime(1772950000),
++    logic.formatResetTime(1772950000),
+     /2026|03|08|09/
+   );
+ });
+ 
+ test("combined chart markup includes hover targets for token and cost values", () => {
+-  const markup = buildCombinedChartMarkup([
++  const markup = logic.buildCombinedChartMarkup([
+     { day: "2026-03-07", totalTokens: 1500000, totalUsd: 2.4 },
+     { day: "2026-03-08", totalTokens: 2400000, totalUsd: 3.25 },
+   ]);
+@@ -48,7 +43,7 @@ test("combined chart markup includes hover targets for token and cost values", (
+ });
+ 
+ test("reset progress exposes elapsed and remaining percentages", () => {
+-  const progress = calculateResetProgress({
++  const progress = logic.calculateResetProgress({
+     generatedAt: "2026-03-08T05:30:00.000Z",
+     resetsAt: 1772956800,
+     windowMinutes: 300,
+@@ -60,7 +55,7 @@ test("reset progress exposes elapsed and remaining percentages", () => {
+ 
+ test("stale rate-limit snapshots are detected after the reset time passes", () => {
+   assert.equal(
+-    isRateLimitSnapshotStale({
++    logic.isRateLimitSnapshotStale({
+       generatedAt: "2026-03-08T13:57:40.447Z",
+       latestRateLimitAt: "2026-03-08T13:57:03.002Z",
+       resetsAt: 1772977197,
+@@ -69,7 +64,7 @@ test("stale rate-limit snapshots are detected after the reset time passes", () =
+   );
+ 
+   assert.equal(
+-    isRateLimitSnapshotStale({
++    logic.isRateLimitSnapshotStale({
+       generatedAt: "2026-03-08T13:30:00.000Z",
+       latestRateLimitAt: "2026-03-08T13:20:00.000Z",
+       resetsAt: 1772977197,
+@@ -79,8 +74,8 @@ test("stale rate-limit snapshots are detected after the reset time passes", () =
+ });
+ 
+ test("gpt-5.4 codex alias is rendered as GPT-5.4", () => {
+-  assert.equal(formatModelLabel("gpt-5.4-codex"), "GPT-5.4");
+-  assert.equal(formatModelLabel("gpt-5.1-codex"), "gpt-5.1-codex");
++  assert.equal(logic.formatModelLabel("gpt-5.4-codex"), "GPT-5.4");
++  assert.equal(logic.formatModelLabel("gpt-5.1-codex"), "gpt-5.1-codex");
+ });
+ 
+ test("billing scope and range helpers support natural month and visible slices", () => {
+@@ -90,13 +85,13 @@ test("billing scope and range helpers support natural month and visible slices",
+     { day: "2026-02-28", totalTokens: 300000, totalUsd: 6 },
+   ];
+ 
+-  const monthRows = getScopeRows(rows, "2026-03-08T10:00:00.000Z", "month");
++  const monthRows = logic.getScopeRows(rows, "2026-03-08T10:00:00.000Z", "month");
+   assert.deepEqual(monthRows.map((row) => row.day), ["2026-03-08", "2026-03-07"]);
+ 
+-  const visibleRows = getVisibleLedgerRows(monthRows, 0, 1);
++  const visibleRows = logic.getVisibleLedgerRows(monthRows, 0, 1);
+   assert.deepEqual(visibleRows.map((row) => row.day), ["2026-03-08", "2026-03-07"]);
+ 
+-  const summary = summarizeLedgerRows(monthRows);
++  const summary = logic.summarizeLedgerRows(monthRows);
+   assert.equal(summary.totalTokens, 900000);
+   assert.equal(summary.totalUsd, 18);
+ });
+@@ -104,9 +99,9 @@ test("billing scope and range helpers support natural month and visible slices",
+ test("session pagination returns 10 rows per page and computes total pages", () => {
+   const rows = Array.from({ length: 23 }, (_, index) => ({ id: `thread-${index + 1}` }));
+ 
+-  assert.equal(getSessionPageCount(rows, 10), 3);
++  assert.equal(logic.getSessionPageCount(rows, 10), 3);
+   assert.deepEqual(
+-    getSessionPageRows(rows, 2, 10).map((row) => row.id),
++    logic.getSessionPageRows(rows, 2, 10).map((row) => row.id),
+     ["thread-11", "thread-12", "thread-13", "thread-14", "thread-15", "thread-16", "thread-17", "thread-18", "thread-19", "thread-20"]
+   );
+ });
+@@ -127,7 +122,7 @@ test("session filters match title, model, and created date together", () => {
+     },
+   ];
+ 
+-  const filtered = getFilteredSessionRows(rows, {
++  const filtered = logic.getFilteredSessionRows(rows, {
+     title: "openclaw",
+     model: "5.3",
+     createdDate: "2026-03-07",
+@@ -136,17 +131,32 @@ test("session filters match title, model, and created date together", () => {
+   assert.deepEqual(filtered.map((row) => row.id), ["thread-2"]);
+ });
+ 
++test("session filters can distinguish codex local rows from openclaw oauth rows", () => {
++  const rows = [
++    { id: "thread-1", title: "local", modelName: "gpt-5.4", createdAt: 1772940000, usageOrigin: "codex-local" },
++    { id: "thread-2", title: "oauth", modelName: "gpt-5.4", createdAt: 1772943600, usageOrigin: "openclaw-oauth" },
++  ];
++
++  const filtered = logic.getFilteredSessionRows(rows, {
++    origin: "openclaw-oauth",
++  });
++
++  assert.deepEqual(filtered.map((row) => row.id), ["thread-2"]);
++});
++
+ test("openclaw model table markup renders model costs and fallback source state", () => {
+-  const markup = buildOpenClawModelTableMarkup([
++  const markup = logic.buildOpenClawModelTableMarkup([
+     { modelName: "gpt-5", totalUsd: 24.52151025 },
+     { modelName: "gpt-5.3-codex", totalUsd: 4.31679775 },
+   ]);
+ 
++  assert.match(markup, /<table/);
++  assert.match(markup, /<td>gpt-5<\/td>/);
+   assert.match(markup, /gpt-5\.3-codex/);
+   assert.match(markup, /\$24\.52/);
+   assert.match(markup, /模型/);
+ 
+-  const emptyMarkup = buildOpenClawModelTableMarkup([]);
++  const emptyMarkup = logic.buildOpenClawModelTableMarkup([]);
+   assert.match(emptyMarkup, /暂无模型费用明细/);
+ });
+ 
+@@ -167,10 +177,34 @@ test("cost estimate charges cached input at cached rate instead of double chargi
+ 
+ test("billable input tokens exclude cached input tokens", () => {
+   assert.equal(
+-    getBillableInputTokens({
++    logic.getBillableInputTokens({
+       inputTokens: 6080000,
+       cachedInputTokens: 5720000,
+     }),
+     360000
+   );
+ });
++
++test("dialog closes when the backdrop itself is clicked", () => {
++  const dialog = { nodeName: "DIALOG" };
++  assert.equal(logic.shouldCloseDialogFromBackdropClick(dialog, dialog), true);
++  assert.equal(logic.shouldCloseDialogFromBackdropClick(dialog, { nodeName: "DIV" }), false);
++});
++
++test("prompt summaries collapse whitespace and trim long prompts", () => {
++  assert.equal(logic.summarizePromptText("  第一行\n\n第二行  ", 20), "第一行 第二行");
++  assert.equal(
++    logic.summarizePromptText("这是一个很长的提示词，用来验证前端会先展示摘要而不是整段直接撑开布局。", 18),
++    "这是一个很长的提示词，用来验证..."
++  );
++});
++
++test("dashboard html exposes the refactored shadcn-style shell structure", () => {
++  const appSource = fs.readFileSync(path.join(__dirname, "..", "src", "App.jsx"), "utf8");
++
++  assert.match(appSource, /Codex 本地/);
++  assert.match(appSource, /OpenClaw \/ OAuth/);
++  assert.match(appSource, /来源筛选/);
++  assert.match(appSource, /SectionCard/);
++  assert.match(appSource, /TabsTrigger/);
++});
+diff --git a/test/usageRepository.test.js b/test/usageRepository.test.js
+index cabfcbd..c6afb43 100644
+--- a/test/usageRepository.test.js
++++ b/test/usageRepository.test.js
+@@ -5,7 +5,11 @@ const os = require("node:os");
+ const path = require("node:path");
+ const { execFileSync } = require("node:child_process");
+ 
+-const { loadSnapshot } = require("../server/lib/usageRepository");
++const {
++  classifyUsageOrigin,
++  extractSessionDetails,
++  loadSnapshot,
++} = require("../server/lib/usageRepository");
+ const { buildPricingCatalog } = require("../server/lib/pricing");
+ 
+ function writeJsonl(filePath, rows) {
+@@ -174,6 +178,13 @@ test("loadSnapshot aggregates sqlite history and latest live token/rate-limit ev
+           rate_limits: null,
+         },
+       },
++      {
++        timestamp: "2026-03-08T04:05:02.000Z",
++        type: "event_msg",
++        payload: {
++          type: "task_complete",
++        },
++      },
+     ]
+   );
+ 
+@@ -196,6 +207,7 @@ test("loadSnapshot aggregates sqlite history and latest live token/rate-limit ev
+   assert.equal(snapshot.recentThreads[0].id, "thread-2");
+   assert.equal(snapshot.recentThreads[0].modelName, "gpt-5-codex");
+   assert.equal(snapshot.recentThreads[0].promptText, "请把模型价格表按相同价格合并展示");
++  assert.equal(snapshot.recentThreads[0].statusLabel, "已完结");
+   assert.equal(snapshot.dailyUsage[0].totalTokens, 4600);
+   assert.equal(snapshot.dailyLedger[0].totalTokens, 630);
+   assert.ok(Math.abs(snapshot.dailyLedger[0].totalUsd - 0.0016775) < 0.000001);
+@@ -203,6 +215,133 @@ test("loadSnapshot aggregates sqlite history and latest live token/rate-limit ev
+   assert.equal(snapshot.pricingCatalog[0].inputPerMillion, 1.25);
+ });
+ 
++test("loadSnapshot derives session status from latest lifecycle event", async () => {
++  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "codex-status-"));
++  const codexHome = path.join(tempDir, ".codex");
++  const dbPath = path.join(codexHome, "state_5.sqlite");
++  fs.mkdirSync(path.dirname(dbPath), { recursive: true });
++  execFileSync("sqlite3", [
++    dbPath,
++    `
++      CREATE TABLE threads (
++        id TEXT PRIMARY KEY,
++        rollout_path TEXT NOT NULL,
++        created_at INTEGER NOT NULL,
++        updated_at INTEGER NOT NULL,
++        source TEXT NOT NULL,
++        model_provider TEXT NOT NULL,
++        cwd TEXT NOT NULL,
++        title TEXT NOT NULL,
++        sandbox_policy TEXT NOT NULL,
++        approval_mode TEXT NOT NULL,
++        tokens_used INTEGER NOT NULL DEFAULT 0,
++        has_user_event INTEGER NOT NULL DEFAULT 0,
++        archived INTEGER NOT NULL DEFAULT 0,
++        archived_at INTEGER
++      );
++      INSERT INTO threads (
++        id, rollout_path, created_at, updated_at, source, model_provider, cwd, title,
++        sandbox_policy, approval_mode, tokens_used, has_user_event, archived, archived_at
++      ) VALUES
++        ('thread-1', '/tmp/1.jsonl', 1773018000, 1773018060, 'vscode', 'openai', '/workspace/a', 'waiting', 'danger', 'never', 100, 1, 0, NULL),
++        ('thread-2', '/tmp/2.jsonl', 1773018000, 1773018120, 'vscode', 'openai', '/workspace/b', 'running', 'danger', 'never', 100, 1, 0, NULL),
++        ('thread-3', '/tmp/3.jsonl', 1773018000, 1773018180, 'vscode', 'openai', '/workspace/c', 'done', 'danger', 'never', 100, 1, 0, NULL),
++        ('thread-4', '/tmp/4.jsonl', 1773018000, 1773018240, 'vscode', 'openai', '/workspace/d', 'aborted', 'danger', 'never', 100, 1, 0, NULL);
++    `,
++  ]);
++
++  writeJsonl(path.join(codexHome, "sessions", "2026", "03", "09", "thread-1.jsonl"), [
++    { timestamp: "2026-03-09T01:00:00.000Z", type: "session_meta", payload: { id: "thread-1", model_provider: "openai" } },
++    { timestamp: "2026-03-09T01:00:01.000Z", type: "event_msg", payload: { type: "user_message", message: "hello" } },
++  ]);
++
++  writeJsonl(path.join(codexHome, "sessions", "2026", "03", "09", "thread-2.jsonl"), [
++    { timestamp: "2026-03-09T01:00:00.000Z", type: "session_meta", payload: { id: "thread-2", model_provider: "openai" } },
++    { timestamp: "2026-03-09T01:00:01.000Z", type: "event_msg", payload: { type: "user_message", message: "hello" } },
++    { timestamp: "2026-03-09T01:00:02.000Z", type: "response_item", payload: { type: "reasoning" } },
++  ]);
++
++  writeJsonl(path.join(codexHome, "sessions", "2026", "03", "09", "thread-3.jsonl"), [
++    { timestamp: "2026-03-09T01:00:00.000Z", type: "session_meta", payload: { id: "thread-3", model_provider: "openai" } },
++    { timestamp: "2026-03-09T01:00:01.000Z", type: "event_msg", payload: { type: "task_complete" } },
++  ]);
++
++  writeJsonl(path.join(codexHome, "sessions", "2026", "03", "09", "thread-4.jsonl"), [
++    { timestamp: "2026-03-09T01:00:00.000Z", type: "session_meta", payload: { id: "thread-4", model_provider: "openai" } },
++    { timestamp: "2026-03-09T01:00:01.000Z", type: "event_msg", payload: { type: "turn_aborted" } },
++  ]);
++
++  const snapshot = await loadSnapshot({
++    codexHome,
++    recentThreadsLimit: null,
++    loadOpenClawUsageFn: async () => null,
++  });
++
++  const statuses = Object.fromEntries(snapshot.recentThreads.map((row) => [row.id, row.statusLabel]));
++  assert.equal(statuses["thread-1"], "等待回答");
++  assert.equal(statuses["thread-2"], "进行中");
++  assert.equal(statuses["thread-3"], "已完结");
++  assert.equal(statuses["thread-4"], "已中断");
++});
++
++test("classifyUsageOrigin marks openclaw workspaces separately from local codex workspaces", () => {
++  assert.deepEqual(
++    classifyUsageOrigin({ cwd: "/Users/helena/.openclaw/workspace", source: "vscode" }),
++    {
++      kind: "openclaw-oauth",
++      label: "OpenClaw / OAuth",
++      description: "通过 OpenClaw 工作区触发，底层仍消耗 Codex token",
++    }
++  );
++
++  assert.deepEqual(
++    classifyUsageOrigin({ cwd: "/Users/helena/Cursor/codex_token", source: "cli" }),
++    {
++      kind: "codex-local",
++      label: "Codex 本地",
++      description: "直接来自 ~/.codex 的本地线程与会话日志",
++    }
++  );
++});
++
++test("extractSessionDetails keeps each user turn from event messages", () => {
++  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "codex-user-turns-"));
++  const filePath = path.join(tempDir, "thread.jsonl");
++
++  writeJsonl(filePath, [
++    {
++      timestamp: "2026-03-12T12:00:00.000Z",
++      type: "session_meta",
++      payload: {
++        id: "thread-turns",
++        model_provider: "openai",
++      },
++    },
++    {
++      timestamp: "2026-03-12T12:00:01.000Z",
++      type: "event_msg",
++      payload: {
++        type: "user_message",
++        message: "第一轮提问",
++      },
++    },
++    {
++      timestamp: "2026-03-12T12:01:01.000Z",
++      type: "event_msg",
++      payload: {
++        type: "user_message",
++        message: "第二轮追问",
++      },
++    },
++  ]);
++
++  const details = extractSessionDetails(filePath);
++  assert.deepEqual(
++    details.userMessages.map((message) => message.text),
++    ["第一轮提问", "第二轮追问"]
++  );
++});
++
+ test("pricing catalog groups models with identical pricing and removes the gpt-5.4-codex label", () => {
+   const catalog = buildPricingCatalog([
+     "gpt-5-codex",

@@ -20,6 +20,14 @@ function sendJson(response, statusCode, payload) {
   response.end(JSON.stringify(payload));
 }
 
+function sendJsonHead(response, statusCode) {
+  response.writeHead(statusCode, {
+    "content-type": "application/json; charset=utf-8",
+    "cache-control": "no-store",
+  });
+  response.end();
+}
+
 function sendNotFound(response) {
   sendJson(response, 404, { error: "Not found" });
 }
@@ -38,6 +46,59 @@ function serveStaticFile(response, filePath) {
     "cache-control": "no-store",
   });
   response.end(fs.readFileSync(filePath));
+}
+
+function serveStaticHead(response, filePath) {
+  if (!fs.existsSync(filePath)) {
+    sendNotFound(response);
+    return;
+  }
+
+  const extname = path.extname(filePath);
+  const mimeType = MIME_TYPES[extname] || "text/plain; charset=utf-8";
+
+  response.writeHead(200, {
+    "content-type": mimeType,
+    "cache-control": "no-store",
+  });
+  response.end();
+}
+
+function buildInitialSnapshotScript(snapshot) {
+  return `<script>window.__INITIAL_SNAPSHOT__=${JSON.stringify(snapshot).replace(
+    /</g,
+    "\\u003c"
+  )}</script>`;
+}
+
+function serveIndexHtml(response, filePath, snapshot) {
+  if (!fs.existsSync(filePath)) {
+    sendNotFound(response);
+    return;
+  }
+
+  const html = fs
+    .readFileSync(filePath, "utf8")
+    .replace("<!--app-initial-snapshot-->", buildInitialSnapshotScript(snapshot));
+
+  response.writeHead(200, {
+    "content-type": "text/html; charset=utf-8",
+    "cache-control": "no-store",
+  });
+  response.end(html);
+}
+
+function serveIndexHead(response, filePath) {
+  if (!fs.existsSync(filePath)) {
+    sendNotFound(response);
+    return;
+  }
+
+  response.writeHead(200, {
+    "content-type": "text/html; charset=utf-8",
+    "cache-control": "no-store",
+  });
+  response.end();
 }
 
 function readJsonBody(request) {
@@ -73,6 +134,11 @@ function createAppServer(options = {}) {
       } catch (error) {
         sendJson(response, 500, { error: error.message });
       }
+      return;
+    }
+
+    if (request.method === "HEAD" && url.pathname === "/api/snapshot") {
+      sendJsonHead(response, 200);
       return;
     }
 
@@ -112,13 +178,28 @@ function createAppServer(options = {}) {
     }
 
     if (request.method === "GET" && (url.pathname === "/" || url.pathname === "/index.html")) {
-      serveStaticFile(response, path.join(publicDir, "index.html"));
+      serveIndexHtml(
+        response,
+        path.join(publicDir, "index.html"),
+        liveSnapshotService.getCurrentSnapshot()
+      );
+      return;
+    }
+
+    if (request.method === "HEAD" && (url.pathname === "/" || url.pathname === "/index.html")) {
+      serveIndexHead(response, path.join(publicDir, "index.html"));
       return;
     }
 
     if (request.method === "GET") {
       const requestedPath = path.normalize(url.pathname).replace(/^(\.\.[/\\])+/, "");
       serveStaticFile(response, path.join(publicDir, requestedPath));
+      return;
+    }
+
+    if (request.method === "HEAD") {
+      const requestedPath = path.normalize(url.pathname).replace(/^(\.\.[/\\])+/, "");
+      serveStaticHead(response, path.join(publicDir, requestedPath));
       return;
     }
 

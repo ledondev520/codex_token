@@ -1,6 +1,6 @@
 # Codex Usage Dashboard Plan
 
-Last updated: 2026-03-08 22:00 Asia/Shanghai
+Last updated: 2026-03-12 23:23 Asia/Shanghai
 
 ## Goal
 
@@ -21,11 +21,28 @@ Build a standalone local web dashboard in this workspace that reads `~/.codex` u
 11. Extend the dashboard with OpenClaw ChatGPT/Codex usage sourced from CodexBar local cost output. Completed.
 12. Install a fixed-port local background service on 4329. Completed.
 13. Mark stale rate-limit snapshots when reset time has passed. Completed.
+14. Expose the local dashboard through a VPS-backed reverse tunnel for phone access. Completed.
+15. Remove Basic Auth from the temporary VPS preview entrypoint at user request. Completed.
+16. Rework the dashboard layout toward a shadcn/ui-style information architecture without changing data bindings. Completed.
+17. Separate Codex-local usage from OpenClaw/OAuth-driven usage in the UI, reduce prompt verbosity, and tighten shadcn/ui semantics. Completed.
+18. Optimize mobile density, clean residual copy, convert odd model-fee blocks into table semantics, and expose per-turn user messages in session detail. Completed.
+19. Migrate the frontend from static HTML/CSS/JS to a real React + Vite + Tailwind + local shadcn/ui component project. Completed.
+20. Tighten shadcn authenticity with local Select/Skeleton/Separator components and improve first-load UX. Completed.
+21. Make the build pipeline part of the actual runtime path so serving and launchd always use the latest React frontend. Completed.
+22. Close remaining project-level gaps after the migration: alias support, proper HEAD responses, and HTTP regression coverage. Completed.
+23. Replace remaining manual range/progress controls with native local shadcn Slider/Progress usage. Completed.
+24. Replace legacy dashed empty placeholders with reusable shadcn-style alert empty states. Completed.
+25. Introduce a shared label primitive and apply it across source/filter/detail metadata labeling. Completed.
+26. Replace remaining hard-coded neutral panel surfaces with semantic theme token surfaces. Completed.
+27. Remove hard-coded slate palette usage from shared dashboard primitives. Completed.
+28. Theme-align billing chart colors/ticks/tooltips with CSS variables. Completed.
+29. Prevent Recharts single-day width/height warning path by using non-chart fallback and active-tab render gating. Completed.
+30. Add regression guards for shadcn consistency and record full T28–T34 checkpoint evidence. Completed.
 
 ## Architecture
 
 - Backend: Node.js HTTP server with Express, SQLite reader, session JSONL reader, and SSE streaming.
-- Frontend: static HTML/CSS/JS served by the backend.
+- Frontend: React + Vite + Tailwind + local shadcn component source built into `public/` and served by the backend.
 - Data sources:
   - `~/.codex/state_5.sqlite`
   - `~/.codex/sessions/**/*.jsonl`
@@ -48,6 +65,8 @@ Build a standalone local web dashboard in this workspace that reads `~/.codex` u
 - Fall back to the most recent non-null rate-limit snapshot when the newest session event omits quota data.
 - Merge per-thread token/model/limit fields by timestamp so newer partial files do not wipe older non-null snapshots.
 - Cache OpenClaw usage reads and degrade to `null` when `codexbar` is unavailable so the rest of the dashboard stays live.
+- Keep the dashboard bound to loopback on the Mac and expose phone access through a reverse SSH tunnel terminated by the VPS reverse proxy.
+- Keep a clear record when public-access protections are relaxed so the exposure level is obvious on resume.
 
 ## Current Phase
 
@@ -60,3 +79,17 @@ Build a standalone local web dashboard in this workspace that reads `~/.codex` u
 - OpenClaw / ChatGPT usage is now integrated as a separate panel backed by `codexbar cost`, filtered to GPT / ChatGPT models, with top-model and recent-daily summaries.
 - The dashboard is now managed by `launchctl` so `127.0.0.1:4329` stays stable without relying on this chat session.
 - Rate-limit cards are being clarified so an expired local snapshot is shown as stale rather than looking like a failed reset.
+- A VPS preview path is now maintained separately from the app process so mobile access can be enabled without moving local Codex data onto the server.
+- The VPS preview endpoint is temporarily open without Basic Auth at the user's request, which trades convenience for substantially weaker privacy.
+- The frontend layout now uses a more shadcn/ui-like shell: top status bar, main content stack, right-side supporting panel, neutral surfaces, and preserved DOM IDs for the existing JS render pipeline.
+- Session rows are now classified as `Codex 本地` vs `OpenClaw / OAuth` using local thread metadata, the sessions table exposes a source filter, and long prompt/title text is summarized before rendering while the full prompt remains available on demand.
+- Mobile now switches between `Codex 本地` and `OpenClaw / OAuth` views through source tabs, the OpenClaw model-fee area uses a real table, and session detail now lists each captured user turn from local event logs.
+- The live snapshot service now guards against stale background refreshes overwriting a newly selected `codexHome`.
+- The frontend now builds from `src/` through Vite into `public/`, uses local shadcn-style components under `src/components/ui/`, and no longer depends on the legacy imperative `public/app.js` architecture.
+- The React frontend now uses additional local shadcn-style primitives (`Select`, `Skeleton`, `Separator`) so filter controls and first-load states rely less on raw HTML elements and empty zero-value placeholders.
+- Default startup now rebuilds the client before serving, and the launchd entrypoint does the same, so the runtime is aligned with the migrated React/Vite frontend rather than assuming `public/` is already fresh.
+- Vite and editor aliasing now match `components.json`, and the HTTP server correctly answers `HEAD` for the root page, static assets, and snapshot endpoint instead of treating them as unsupported.
+- Billing range controls now use the local shadcn `Slider` primitive instead of raw dual `input[type=range]`, and rate-limit usage bars rely on the shadcn `Progress` track directly.
+- Empty-state rendering now reuses local `Alert`/`EmptyState` components, repeated metadata headings now use the local `Label` primitive, and hard-coded slate backgrounds were replaced with semantic theme tokens.
+- Shared primitives (`metric-tile`, `dialog`, `progress`, `slider`, `skeleton`) now avoid hard-coded slate classes, and billing-chart palette values are sourced from CSS variables to stay aligned with the active theme.
+- Billing chart rendering is now gated for active tab + multi-day ranges, with a single-day fallback notice that avoids Recharts width/height warnings while preserving the detailed ledger table.

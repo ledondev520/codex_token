@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+  <dict>
+    <key>Label</key>
+    <string>com.helena.codex-usage-dashboard-vps-preview</string>
+
+    <key>ProgramArguments</key>
+    <array>
+      <string>/Users/helena/Cursor/codex_token/scripts/run-vps-preview-tunnel.sh</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/helena/Cursor/codex_token</string>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>KeepAlive</key>
+    <true/>
+
+    <key>StandardOutPath</key>
+    <string>/Users/helena/Cursor/codex_token/logs/vps-preview.stdout.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>/Users/helena/Cursor/codex_token/logs/vps-preview.stderr.log</string>
+  </dict>
+</plist>
