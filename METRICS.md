@@ -1,6 +1,6 @@
 # Metrics
 
-Last updated: 2026-03-12 23:23 Asia/Shanghai
+Last updated: 2026-03-13 08:08 Asia/Shanghai
 
 | Round | Metric | Value | Notes |
 | --- | --- | --- | --- |
@@ -72,3 +72,5 @@ Last updated: 2026-03-12 23:23 Asia/Shanghai
 | 21 | Billing chart theme alignment | complete | Recharts colors/ticks/tooltips now read from CSS variables instead of fixed hex values |
 | 21 | Recharts warning mitigation | pass | billing view now falls back to table-first messaging on single-day ranges; Playwright warning scan returned 0 warnings on 2026-03-12 23:22 Asia/Shanghai |
 | 21 | Automated tests | 28 passing | `npm test` on 2026-03-12 23:17 Asia/Shanghai after T28-T34 refactor and regression guards |
+| 22 | Table clipping fix | complete | `ScrollArea` now exposes horizontal scrollbar and key cost/pricing tables use fixed layout + explicit column widths to prevent right-column clipping |
+| 22 | Automated tests | 28 passing | `npm test` on 2026-03-13 08:07 Asia/Shanghai after table layout hardening |

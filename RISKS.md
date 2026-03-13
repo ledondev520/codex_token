@@ -1,6 +1,6 @@
 # Risks
 
-Last updated: 2026-03-12 23:23 Asia/Shanghai
+Last updated: 2026-03-13 08:08 Asia/Shanghai
 
 | ID | Risk | Trigger | Mitigation | Rollback |
 | --- | --- | --- | --- | --- |
@@ -16,7 +16,7 @@ Last updated: 2026-03-12 23:23 Asia/Shanghai
 | R10 | Public preview traffic is HTTP-only when using a raw VPS IP | user opens the dashboard over `http://<vps-ip>:18080` on mobile networks | treat the VPS preview as temporary and move to a domain + HTTPS when available | disable the nginx site on `18080` and unload the tunnel launch agent |
 | R11 | Reverse tunnel can drop when the Mac sleeps or changes network | mobile preview stops updating or returns `502` from the VPS | keep the tunnel under `launchd` with SSH keepalives so it auto-restarts after disconnects | manually relaunch the tunnel or unload the preview agent if it loops |
 | R12 | Public preview is now completely unauthenticated | anyone who finds `23.81.118.51:18080` can read dashboard data | treat this as short-lived only; if privacy matters, restore auth or move to HTTPS with an allowlist or VPN | re-add Basic Auth to nginx or shut down the preview endpoint |
-| R13 | The denser shadcn-style layout still contains wide data tables on small screens | mobile viewport narrower than the session/billing table minimum width | keep responsive stacking for panels and preserve horizontal scroll wrappers around tables | collapse columns or move session detail into cards if mobile browsing becomes a top priority |
+| R13 | The denser shadcn-style layout still contains wide data tables on small screens | mobile viewport narrower than the session/billing table minimum width | use fixed table layout + horizontal `ScrollArea` scrollbar + nowrap numeric columns so values remain readable without clipping | collapse columns or move session detail into cards if mobile browsing becomes a top priority |
 | R14 | OpenClaw/OAuth source classification currently uses local thread metadata heuristics | future OpenClaw runs stop using `~/.openclaw` workspaces or write different `cwd` patterns | keep the label explicit as a heuristic and update the classifier if a stronger local signal appears in thread/session metadata | fall back to an “未知入口” label instead of pretending the split is exact |
 | R15 | Per-turn user messages currently come only from local `event_msg.user_message` records | a future Codex log format omits those events or moves user turns elsewhere | prefer `event_msg.user_message` to avoid duplicated boilerplate, and extend extraction if a new stable field appears | fall back to latest prompt summary only instead of showing duplicated or polluted turn history |
 | R16 | The frontend build now depends on Yarn 4 PnP and a Vite compile step before serving updated UI code | user edits `src/` but does not run `npm run build:client` or `npm test`, leaving `public/` stale | keep the build output path explicit in scripts and use `npm test` to rebuild before verification | rerun `npm run build:client` to refresh `public/`, or temporarily inspect the React source directly if the built output is stale |

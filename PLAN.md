@@ -1,6 +1,6 @@
 # Codex Usage Dashboard Plan
 
-Last updated: 2026-03-12 23:23 Asia/Shanghai
+Last updated: 2026-03-13 08:08 Asia/Shanghai
 
 ## Goal
 
@@ -38,6 +38,7 @@ Build a standalone local web dashboard in this workspace that reads `~/.codex` u
 28. Theme-align billing chart colors/ticks/tooltips with CSS variables. Completed.
 29. Prevent Recharts single-day width/height warning path by using non-chart fallback and active-tab render gating. Completed.
 30. Add regression guards for shadcn consistency and record full T28–T34 checkpoint evidence. Completed.
+31. Fix table-column clipping in cost/pricing panels by hardening scroll + table layout strategy. Completed.
 
 ## Architecture
 
@@ -93,3 +94,4 @@ Build a standalone local web dashboard in this workspace that reads `~/.codex` u
 - Empty-state rendering now reuses local `Alert`/`EmptyState` components, repeated metadata headings now use the local `Label` primitive, and hard-coded slate backgrounds were replaced with semantic theme tokens.
 - Shared primitives (`metric-tile`, `dialog`, `progress`, `slider`, `skeleton`) now avoid hard-coded slate classes, and billing-chart palette values are sourced from CSS variables to stay aligned with the active theme.
 - Billing chart rendering is now gated for active tab + multi-day ranges, with a single-day fallback notice that avoids Recharts width/height warnings while preserving the detailed ledger table.
+- Scroll-area tables now include horizontal scrollbar support and fixed column-width strategies, preventing rate/cost columns from being visually clipped in the current-session and pricing panels.

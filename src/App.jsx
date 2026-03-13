@@ -254,29 +254,29 @@ function CostBreakdownTable({ currentSession }) {
 
   return (
     <ScrollArea className="overflow-hidden rounded-xl border">
-      <Table className="min-w-[560px]">
+      <Table className="min-w-full table-fixed">
         <TableHeader>
           <TableRow>
-            <TableHead>项目</TableHead>
-            <TableHead className="text-right">数量</TableHead>
-            <TableHead className="text-right">单价</TableHead>
-            <TableHead className="text-right">费用</TableHead>
+            <TableHead className="w-[40%]">项目</TableHead>
+            <TableHead className="w-[20%] text-right">数量</TableHead>
+            <TableHead className="w-[20%] text-right">单价</TableHead>
+            <TableHead className="w-[20%] text-right">费用</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
           {rows.map((row) => (
             <TableRow key={row.label}>
-              <TableCell>{row.label}</TableCell>
-              <TableCell className="text-right mono">{row.tokens}</TableCell>
-              <TableCell className="text-right">{row.rate}</TableCell>
-              <TableCell className="text-right mono font-semibold">{row.total}</TableCell>
+              <TableCell className="break-words">{row.label}</TableCell>
+              <TableCell className="text-right mono whitespace-nowrap">{row.tokens}</TableCell>
+              <TableCell className="text-right whitespace-nowrap">{row.rate}</TableCell>
+              <TableCell className="text-right mono whitespace-nowrap font-semibold">{row.total}</TableCell>
             </TableRow>
           ))}
           <TableRow>
             <TableCell className="font-semibold">估算总费用</TableCell>
             <TableCell />
             <TableCell />
-            <TableCell className="text-right mono text-base font-semibold">{formatUsd(cost.totalUsd)}</TableCell>
+            <TableCell className="text-right mono whitespace-nowrap text-base font-semibold">{formatUsd(cost.totalUsd)}</TableCell>
           </TableRow>
         </TableBody>
       </Table>
@@ -291,25 +291,25 @@ function PricingCatalogTable({ rows }) {
 
   return (
     <ScrollArea className="overflow-hidden rounded-xl border">
-      <Table className="min-w-[560px]">
+      <Table className="min-w-full table-fixed">
         <TableHeader>
           <TableRow>
-            <TableHead>模型</TableHead>
-            <TableHead className="text-right">输入</TableHead>
-            <TableHead className="text-right">缓存输入</TableHead>
-            <TableHead className="text-right">输出</TableHead>
+            <TableHead className="w-[40%]">模型</TableHead>
+            <TableHead className="w-[20%] text-right">输入</TableHead>
+            <TableHead className="w-[20%] text-right">缓存输入</TableHead>
+            <TableHead className="w-[20%] text-right">输出</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
           {rows.map((row) => (
             <TableRow key={row.modelName}>
-              <TableCell>
-                <div className="font-semibold">{row.modelName}</div>
-                <div className="mt-1 text-xs text-muted-foreground">{row.sourceLabel || "-"}</div>
+              <TableCell className="align-top">
+                <div className="break-words font-semibold">{row.modelName}</div>
+                <div className="mt-1 break-words text-xs text-muted-foreground">{row.sourceLabel || "-"}</div>
               </TableCell>
-              <TableCell className="text-right mono">{formatPricePerMillion(row.inputPerMillion)}</TableCell>
-              <TableCell className="text-right mono">{formatPricePerMillion(row.cachedInputPerMillion)}</TableCell>
-              <TableCell className="text-right mono">{formatPricePerMillion(row.outputPerMillion)}</TableCell>
+              <TableCell className="text-right mono whitespace-nowrap">{formatPricePerMillion(row.inputPerMillion)}</TableCell>
+              <TableCell className="text-right mono whitespace-nowrap">{formatPricePerMillion(row.cachedInputPerMillion)}</TableCell>
+              <TableCell className="text-right mono whitespace-nowrap">{formatPricePerMillion(row.outputPerMillion)}</TableCell>
             </TableRow>
           ))}
         </TableBody>
@@ -325,18 +325,18 @@ function OpenClawCostTable({ rows }) {
 
   return (
     <ScrollArea className="overflow-hidden rounded-xl border">
-      <Table className="min-w-[320px]">
+      <Table className="min-w-full table-fixed">
         <TableHeader>
           <TableRow>
-            <TableHead>模型</TableHead>
-            <TableHead className="text-right">费用</TableHead>
+            <TableHead className="w-[70%]">模型</TableHead>
+            <TableHead className="w-[30%] text-right">费用</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
           {rows.map((row) => (
             <TableRow key={row.modelName}>
-              <TableCell className="font-medium">{formatModelLabel(row.modelName)}</TableCell>
-              <TableCell className="text-right mono font-semibold">{formatUsd(row.totalUsd)}</TableCell>
+              <TableCell className="break-words font-medium">{formatModelLabel(row.modelName)}</TableCell>
+              <TableCell className="text-right mono whitespace-nowrap font-semibold">{formatUsd(row.totalUsd)}</TableCell>
             </TableRow>
           ))}
         </TableBody>
