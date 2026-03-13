@@ -1,6 +1,6 @@
 # Metrics
 
-Last updated: 2026-03-13 08:08 Asia/Shanghai
+Last updated: 2026-03-13 08:14 Asia/Shanghai
 
 | Round | Metric | Value | Notes |
 | --- | --- | --- | --- |
@@ -74,3 +74,9 @@ Last updated: 2026-03-13 08:08 Asia/Shanghai
 | 21 | Automated tests | 28 passing | `npm test` on 2026-03-12 23:17 Asia/Shanghai after T28-T34 refactor and regression guards |
 | 22 | Table clipping fix | complete | `ScrollArea` now exposes horizontal scrollbar and key cost/pricing tables use fixed layout + explicit column widths to prevent right-column clipping |
 | 22 | Automated tests | 28 passing | `npm test` on 2026-03-13 08:07 Asia/Shanghai after table layout hardening |
+| 23 | Overview metric readability | complete | value truncation ellipsis removed from metric cards so top-level numbers render fully |
+| 23 | Automated tests | 28 passing | `npm test` on 2026-03-13 08:12 Asia/Shanghai after metric truncation rollback |
+| 24 | Mobile viewport overflow | 0px page overflow | Playwright `390x844` checks returned `docScrollWidth = docClientWidth = 390` for both Codex and OpenClaw views on 2026-03-13 08:13 Asia/Shanghai |
+| 24 | Mobile session browsing | enabled | Playwright mobile snapshot shows card-based session browsing replacing the 10-column session table on `全部会话` |
+| 24 | Browser console errors | 0 | Playwright error-level console capture on `http://127.0.0.1:4329/` returned no messages after the mobile pass on 2026-03-13 08:13 Asia/Shanghai |
+| 24 | Automated tests | 28 passing | `npm test` on 2026-03-13 08:13 Asia/Shanghai after the T37 mobile responsiveness pass |

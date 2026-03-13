@@ -1,0 +1,145 @@
+diff --git a/METRICS.md b/METRICS.md
+index 7e65978..be47536 100644
+--- a/METRICS.md
++++ b/METRICS.md
+@@ -1,6 +1,6 @@
+ # Metrics
+ 
+-Last updated: 2026-03-13 08:08 Asia/Shanghai
++Last updated: 2026-03-13 08:13 Asia/Shanghai
+ 
+ | Round | Metric | Value | Notes |
+ | --- | --- | --- | --- |
+@@ -74,3 +74,5 @@ Last updated: 2026-03-13 08:08 Asia/Shanghai
+ | 21 | Automated tests | 28 passing | `npm test` on 2026-03-12 23:17 Asia/Shanghai after T28-T34 refactor and regression guards |
+ | 22 | Table clipping fix | complete | `ScrollArea` now exposes horizontal scrollbar and key cost/pricing tables use fixed layout + explicit column widths to prevent right-column clipping |
+ | 22 | Automated tests | 28 passing | `npm test` on 2026-03-13 08:07 Asia/Shanghai after table layout hardening |
++| 23 | Overview metric readability | complete | value truncation ellipsis removed from metric cards so top-level numbers render fully |
++| 23 | Automated tests | 28 passing | `npm test` on 2026-03-13 08:12 Asia/Shanghai after metric truncation rollback |
+diff --git a/PLAN.md b/PLAN.md
+index 7b91427..1ebe0eb 100644
+--- a/PLAN.md
++++ b/PLAN.md
+@@ -1,6 +1,6 @@
+ # Codex Usage Dashboard Plan
+ 
+-Last updated: 2026-03-13 08:08 Asia/Shanghai
++Last updated: 2026-03-13 08:13 Asia/Shanghai
+ 
+ ## Goal
+ 
+@@ -39,6 +39,7 @@ Build a standalone local web dashboard in this workspace that reads `~/.codex` u
+ 29. Prevent Recharts single-day width/height warning path by using non-chart fallback and active-tab render gating. Completed.
+ 30. Add regression guards for shadcn consistency and record full T28–T34 checkpoint evidence. Completed.
+ 31. Fix table-column clipping in cost/pricing panels by hardening scroll + table layout strategy. Completed.
++32. Remove metric-card value ellipsis truncation and keep full-value readability in overview tiles. Completed.
+ 
+ ## Architecture
+ 
+@@ -95,3 +96,4 @@ Build a standalone local web dashboard in this workspace that reads `~/.codex` u
+ - Shared primitives (`metric-tile`, `dialog`, `progress`, `slider`, `skeleton`) now avoid hard-coded slate classes, and billing-chart palette values are sourced from CSS variables to stay aligned with the active theme.
+ - Billing chart rendering is now gated for active tab + multi-day ranges, with a single-day fallback notice that avoids Recharts width/height warnings while preserving the detailed ledger table.
+ - Scroll-area tables now include horizontal scrollbar support and fixed column-width strategies, preventing rate/cost columns from being visually clipped in the current-session and pricing panels.
++- Overview metric tiles no longer force value ellipsis truncation; numeric values render fully while model labels continue to wrap when needed.
+diff --git a/TASKS.md b/TASKS.md
+index b3d6fdc..22fe4e6 100644
+--- a/TASKS.md
++++ b/TASKS.md
+@@ -1,6 +1,6 @@
+ # Tasks
+ 
+-Last updated: 2026-03-13 08:08 Asia/Shanghai
++Last updated: 2026-03-13 08:13 Asia/Shanghai
+ 
+ | ID | Priority | Est | Slot | Status | Task | Input | Output | Validation | DoD |
+ | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+@@ -39,3 +39,4 @@ Last updated: 2026-03-13 08:08 Asia/Shanghai
+ | T33 | P1 | 10m | 1 | DONE | Remove single-day Recharts warning path by gating chart rendering conditions | billing tab default 1-day range and hidden-tab render behavior | lazy billing-chart render + single-day fallback copy (table-first) | `npm test` and Playwright console check on `http://127.0.0.1:4329/` | billing tab opens without Recharts width/height warning while keeping ledger table usable |
+ | T34 | P1 | 10m | 1 | DONE | Add shadcn-style regression guardrails and finalize checkpoint evidence for T28-T34 | updated dashboard source and primitives | expanded `dashboardView` assertions + checkpoint docs/log/results/patches | `npm test` and Playwright smoke | regression tests enforce no raw range inputs/slate palette regressions and all checkpoint artifacts are complete |
+ | T35 | P1 | 10m | 1 | DONE | Fix table column clipping in billing/cost/pricing panels | overflow screenshot feedback from user | horizontal `ScrollArea` scrollbar + fixed table layout/column width/nowrap + safer cell wrapping | `npm test` | right-side rate/cost columns stay visible and readable instead of being clipped at card boundaries |
++| T36 | P1 | 5m | 1 | DONE | Remove metric-value ellipsis truncation so overview values stay fully readable | user screenshot feedback on truncated metric tiles | metric value typography without `text-ellipsis` truncation, model tile still wraps | `npm test` | top-overview metrics display full values (no `...`) while preserving card boundaries |
+diff --git a/src/components/dashboard/metric-tile.jsx b/src/components/dashboard/metric-tile.jsx
+new file mode 100644
+index 0000000..9cec8d7
+--- /dev/null
++++ b/src/components/dashboard/metric-tile.jsx
+@@ -0,0 +1,51 @@
++import { Card, CardContent } from "@/components/ui/card.jsx";
++import { Skeleton } from "@/components/ui/skeleton.jsx";
++import { cn } from "@/lib/utils.js";
++
++export function MetricTileSkeleton() {
++  return (
++    <Card className="min-w-0 rounded-xl border shadow-none">
++      <CardContent className="flex min-h-[132px] min-w-0 flex-col gap-4 p-4">
++        <Skeleton className="h-3 w-28" />
++        <Skeleton className="h-10 w-32" />
++        <Skeleton className="mt-auto h-4 w-40" />
++      </CardContent>
++    </Card>
++  );
++}
++
++export function MetricTile({
++  label,
++  value,
++  subvalue,
++  tone = "default",
++  compact = false,
++  wrapValue = false,
++}) {
++  const toneClasses = {
++    default: "bg-card",
++    dark: "bg-primary text-primary-foreground border-primary",
++    teal: "bg-accent text-accent-foreground border-accent",
++    muted: "bg-muted/40",
++  };
++
++  return (
++    <Card className={cn("min-w-0 overflow-hidden rounded-xl border shadow-none", toneClasses[tone])}>
++      <CardContent className="flex min-h-[132px] min-w-0 flex-col gap-4 overflow-hidden p-4">
++        <div className="text-[11px] font-semibold uppercase tracking-[0.18em] opacity-80">{label}</div>
++        <div
++          className={cn(
++            "mono min-w-0 max-w-full leading-none",
++            compact ? "text-[1.72rem] sm:text-[2rem] md:text-[2.4rem]" : "text-[1.95rem] sm:text-[2.2rem] md:text-[2.8rem]",
++            wrapValue
++              ? "break-words whitespace-normal tracking-[-0.03em] leading-[1.06]"
++              : "whitespace-nowrap tracking-[-0.05em]"
++          )}
++        >
++          {value}
++        </div>
++        <div className="mt-auto break-words border-t border-current/15 pt-3 text-sm opacity-85">{subvalue}</div>
++      </CardContent>
++    </Card>
++  );
++}
+diff --git a/logs/task-t36.md b/logs/task-t36.md
+new file mode 100644
+index 0000000..5bd46ed
+--- /dev/null
++++ b/logs/task-t36.md
+@@ -0,0 +1,5 @@
++# T36 Log
++
++- 2026-03-13 08:10 Asia/Shanghai: received user screenshot showing overview metric values rendered as ellipsis (`...`).
++- 2026-03-13 08:11 Asia/Shanghai: removed non-wrap metric value `text-ellipsis` truncation in `metric-tile` while keeping model-value wrapping behavior.
++- 2026-03-13 08:12 Asia/Shanghai: validated with `npm test` (28 passing).
+diff --git a/RESULTS/t36.md b/RESULTS/t36.md
+new file mode 100644
+index 0000000..71dc762
+--- /dev/null
++++ b/RESULTS/t36.md
+@@ -0,0 +1,11 @@
++# T36 Result
++
++## Outcome
++
++- Fixed the overview-card readability regression where key values were showing `...`.
++- Numeric metric values now render fully by default.
++- Model-like values keep wrapping support via `wrapValue`.
++
++## Validation
++
++- `npm test` -> 28 passing

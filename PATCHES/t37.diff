@@ -1,0 +1,577 @@
+diff --git a/METRICS.md b/METRICS.md
+index 7e65978..4567943 100644
+--- a/METRICS.md
++++ b/METRICS.md
+@@ -1,6 +1,6 @@
+ # Metrics
+ 
+-Last updated: 2026-03-13 08:08 Asia/Shanghai
++Last updated: 2026-03-13 08:14 Asia/Shanghai
+ 
+ | Round | Metric | Value | Notes |
+ | --- | --- | --- | --- |
+@@ -74,3 +74,9 @@ Last updated: 2026-03-13 08:08 Asia/Shanghai
+ | 21 | Automated tests | 28 passing | `npm test` on 2026-03-12 23:17 Asia/Shanghai after T28-T34 refactor and regression guards |
+ | 22 | Table clipping fix | complete | `ScrollArea` now exposes horizontal scrollbar and key cost/pricing tables use fixed layout + explicit column widths to prevent right-column clipping |
+ | 22 | Automated tests | 28 passing | `npm test` on 2026-03-13 08:07 Asia/Shanghai after table layout hardening |
++| 23 | Overview metric readability | complete | value truncation ellipsis removed from metric cards so top-level numbers render fully |
++| 23 | Automated tests | 28 passing | `npm test` on 2026-03-13 08:12 Asia/Shanghai after metric truncation rollback |
++| 24 | Mobile viewport overflow | 0px page overflow | Playwright `390x844` checks returned `docScrollWidth = docClientWidth = 390` for both Codex and OpenClaw views on 2026-03-13 08:13 Asia/Shanghai |
++| 24 | Mobile session browsing | enabled | Playwright mobile snapshot shows card-based session browsing replacing the 10-column session table on `全部会话` |
++| 24 | Browser console errors | 0 | Playwright error-level console capture on `http://127.0.0.1:4329/` returned no messages after the mobile pass on 2026-03-13 08:13 Asia/Shanghai |
++| 24 | Automated tests | 28 passing | `npm test` on 2026-03-13 08:13 Asia/Shanghai after the T37 mobile responsiveness pass |
+diff --git a/PLAN.md b/PLAN.md
+index 7b91427..3628bd5 100644
+--- a/PLAN.md
++++ b/PLAN.md
+@@ -1,6 +1,6 @@
+ # Codex Usage Dashboard Plan
+ 
+-Last updated: 2026-03-13 08:08 Asia/Shanghai
++Last updated: 2026-03-13 08:14 Asia/Shanghai
+ 
+ ## Goal
+ 
+@@ -39,6 +39,8 @@ Build a standalone local web dashboard in this workspace that reads `~/.codex` u
+ 29. Prevent Recharts single-day width/height warning path by using non-chart fallback and active-tab render gating. Completed.
+ 30. Add regression guards for shadcn consistency and record full T28–T34 checkpoint evidence. Completed.
+ 31. Fix table-column clipping in cost/pricing panels by hardening scroll + table layout strategy. Completed.
++32. Remove metric-card value ellipsis truncation and keep full-value readability in overview tiles. Completed.
++33. Optimize phone layout by preventing grid-level overflow, adding mobile session cards, and tightening responsive spacing. Completed.
+ 
+ ## Architecture
+ 
+@@ -95,3 +97,5 @@ Build a standalone local web dashboard in this workspace that reads `~/.codex` u
+ - Shared primitives (`metric-tile`, `dialog`, `progress`, `slider`, `skeleton`) now avoid hard-coded slate classes, and billing-chart palette values are sourced from CSS variables to stay aligned with the active theme.
+ - Billing chart rendering is now gated for active tab + multi-day ranges, with a single-day fallback notice that avoids Recharts width/height warnings while preserving the detailed ledger table.
+ - Scroll-area tables now include horizontal scrollbar support and fixed column-width strategies, preventing rate/cost columns from being visually clipped in the current-session and pricing panels.
++- Overview metric tiles no longer force value ellipsis truncation; numeric values render fully while model labels continue to wrap when needed.
++- Phone-sized layouts now keep both Codex and OpenClaw views at `docScrollWidth = docClientWidth`, replace the mobile session table with stacked cards, and use tighter responsive spacing in the header and section chrome.
+diff --git a/RISKS.md b/RISKS.md
+index 0f78db3..346db66 100644
+--- a/RISKS.md
++++ b/RISKS.md
+@@ -1,6 +1,6 @@
+ # Risks
+ 
+-Last updated: 2026-03-13 08:08 Asia/Shanghai
++Last updated: 2026-03-13 08:14 Asia/Shanghai
+ 
+ | ID | Risk | Trigger | Mitigation | Rollback |
+ | --- | --- | --- | --- | --- |
+@@ -24,3 +24,4 @@ Last updated: 2026-03-13 08:08 Asia/Shanghai
+ | R18 | Launchd startup now includes a frontend rebuild step | Vite build fails under launchd due to dependency or environment drift, preventing the dashboard from starting | keep the build command deterministic (`corepack yarn vite build`) and verify with `npm test` whenever the frontend toolchain changes | temporarily run the last successful built `public/` bundle by restoring the simpler start command if launchd build failures block service recovery |
+ | R19 | Alias support now depends on both Vite and editor configuration staying aligned | future refactors change one alias path but not the other, causing IDE/import drift | keep `vite.config.mjs`, `jsconfig.json`, and `components.json` in sync when aliases move | revert to relative imports until alias configuration is repaired |
+ | R20 | Billing chart warning can reappear if future refactors remove the single-day fallback or active-tab gating | restoring always-on Recharts render for hidden tabs or 1-day windows | keep Playwright console warning checks and preserve the table-first fallback for 0/1-day windows | if warnings return, disable chart rendering for small ranges and re-enable only after validating container-size stability |
++| R21 | Mobile session browsing now has both card and table render paths | future session-field changes update the desktop table but not the mobile card layout | keep both views driven from the same `pageRows` data and include phone + desktop checks when session-row fields change | temporarily fall back to the desktop table on all breakpoints if card/table parity breaks |
+diff --git a/TASKS.md b/TASKS.md
+index b3d6fdc..998a565 100644
+--- a/TASKS.md
++++ b/TASKS.md
+@@ -1,6 +1,6 @@
+ # Tasks
+ 
+-Last updated: 2026-03-13 08:08 Asia/Shanghai
++Last updated: 2026-03-13 08:14 Asia/Shanghai
+ 
+ | ID | Priority | Est | Slot | Status | Task | Input | Output | Validation | DoD |
+ | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+@@ -39,3 +39,5 @@ Last updated: 2026-03-13 08:08 Asia/Shanghai
+ | T33 | P1 | 10m | 1 | DONE | Remove single-day Recharts warning path by gating chart rendering conditions | billing tab default 1-day range and hidden-tab render behavior | lazy billing-chart render + single-day fallback copy (table-first) | `npm test` and Playwright console check on `http://127.0.0.1:4329/` | billing tab opens without Recharts width/height warning while keeping ledger table usable |
+ | T34 | P1 | 10m | 1 | DONE | Add shadcn-style regression guardrails and finalize checkpoint evidence for T28-T34 | updated dashboard source and primitives | expanded `dashboardView` assertions + checkpoint docs/log/results/patches | `npm test` and Playwright smoke | regression tests enforce no raw range inputs/slate palette regressions and all checkpoint artifacts are complete |
+ | T35 | P1 | 10m | 1 | DONE | Fix table column clipping in billing/cost/pricing panels | overflow screenshot feedback from user | horizontal `ScrollArea` scrollbar + fixed table layout/column width/nowrap + safer cell wrapping | `npm test` | right-side rate/cost columns stay visible and readable instead of being clipped at card boundaries |
++| T36 | P1 | 5m | 1 | DONE | Remove metric-value ellipsis truncation so overview values stay fully readable | user screenshot feedback on truncated metric tiles | metric value typography without `text-ellipsis` truncation, model tile still wraps | `npm test` | top-overview metrics display full values (no `...`) while preserving card boundaries |
++| T37 | P0 | 20m | 1 | DONE | Optimize mobile responsiveness across the dashboard shell and session browsing | current React dashboard mobile layout | grid/card shrink guards, tighter responsive header/section spacing, mobile session cards, phone-safe 3-column tables, checkpoint docs/results/log/patch | `npm test` and Playwright mobile overflow checks on `http://127.0.0.1:4329/` | `390px` viewport shows no page-level horizontal overflow for Codex or OpenClaw views, and `全部会话` is readable on phone without dragging a 10-column table |
+diff --git a/src/App.jsx b/src/App.jsx
+index ddc445c..1ce5a93 100644
+--- a/src/App.jsx
++++ b/src/App.jsx
+@@ -440,9 +440,9 @@ function BillingChart({ rows }) {
+   const costFill = "color-mix(in srgb, var(--accent) 24%, transparent)";
+ 
+   return (
+-    <div className="rounded-xl border bg-background p-4">
++    <div className="min-w-0 rounded-xl border bg-background p-3 sm:p-4">
+       {chartRows.length > 1 ? (
+-        <div className="h-[320px]">
++        <div className="h-[280px] sm:h-[320px]">
+           <ResponsiveContainer width="100%" height="100%">
+             <AreaChart data={chartRows} margin={{ left: 8, right: 8, top: 12, bottom: 0 }}>
+               <CartesianGrid vertical={false} stroke={gridColor} />
+@@ -570,7 +570,7 @@ function CodexDashboard({
+   const secondary = rateLimits?.secondary || null;
+ 
+   const sourceCards = (
+-    <div className="flex flex-wrap items-center gap-3">
++    <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto sm:justify-end sm:gap-3">
+       <Badge variant={connectionBadgeVariant(connectionLabel)}>{connectionLabel}</Badge>
+       <Badge variant="secondary">订阅计划 {formatPlanName(rateLimits?.planType)}</Badge>
+     </div>
+@@ -619,7 +619,7 @@ function CodexDashboard({
+             value={Math.max(0, Math.min(100, Number(windowData?.usedPercent || 0)))}
+             indicatorClassName={stale ? "bg-amber-500" : "bg-primary"}
+           />
+-          <div className="space-y-1 text-sm text-muted-foreground">
++          <div className="space-y-1 break-words text-sm text-muted-foreground">
+             <p>剩余 {formatPercent(windowData?.remainingPercent)}</p>
+             <p>{buildResetCopy(windowData)}</p>
+           </div>
+@@ -636,10 +636,10 @@ function CodexDashboard({
+ 
+   return (
+     <>
+-      <div className="grid gap-5">
++      <div className="grid min-w-0 gap-5">
+         <SectionCard title="数据源与刷新" description="本地数据源、目录切换与来源说明" actions={sourceCards}>
+-          <div className="grid gap-4 lg:grid-cols-[minmax(0,1.1fr)_minmax(320px,0.9fr)]">
+-            <div className="grid gap-4 md:grid-cols-2">
++          <div className="grid min-w-0 gap-4 lg:grid-cols-[minmax(0,1.1fr)_minmax(320px,0.9fr)]">
++            <div className="grid min-w-0 gap-4 md:grid-cols-2">
+               <Card className="rounded-xl bg-muted/40 shadow-none">
+                 <CardContent className="space-y-2 p-4">
+                   <Label>读取范围</Label>
+@@ -655,15 +655,15 @@ function CodexDashboard({
+                 </CardContent>
+               </Card>
+             </div>
+-            <Card className="rounded-xl shadow-none">
+-              <CardContent className="space-y-4 p-4">
+-                <div className="space-y-1">
+-                  <Label>实时状态</Label>
+-                  <div className="text-sm text-muted-foreground">最近更新 {new Date(snapshot.generatedAt).toLocaleString("zh-CN")}</div>
+-                  <div className="text-sm font-medium">当前目录 {snapshot.sources.codexHome || "-"}</div>
+-                </div>
+-                <form
+-                  className="grid gap-3"
++              <Card className="rounded-xl shadow-none">
++                <CardContent className="space-y-4 p-4">
++                  <div className="space-y-1">
++                    <Label>实时状态</Label>
++                    <div className="text-sm text-muted-foreground">最近更新 {new Date(snapshot.generatedAt).toLocaleString("zh-CN")}</div>
++                    <div className="break-all text-sm font-medium">当前目录 {snapshot.sources.codexHome || "-"}</div>
++                  </div>
++                  <form
++                    className="grid gap-3"
+                   onSubmit={(event) => {
+                     event.preventDefault();
+                     onApplySource();
+@@ -697,7 +697,7 @@ function CodexDashboard({
+               <MetricTile label="Codex 本地线程数" value={formatTokenRaw(snapshot.overview.totalThreads)} subvalue="未归档会话" />
+               <MetricTile label="当前 Codex 线程" value={currentSession ? formatTokenMillions(currentSession.totalTokens) : "-"} subvalue={currentSession ? `${currentSession.usageOriginLabel || "Codex 本地"} · 最近一次 ${formatTokenMillions(currentSession.lastTokens)}` : "最近一次不可用"} tone="dark" />
+               <MetricTile label="Codex 本地累计费用" value={formatUsd(snapshot.overview.totalEstimatedCost)} subvalue="根据本地日志里的每次增量使用记录估算" compact tone="muted" />
+-              <MetricTile label="当前模型" value={formatModelLabel(currentSession?.modelName)} subvalue={currentSession?.cost ? `当前会话费用 ${formatUsd(currentSession.cost.totalUsd)}` : "当前会话费用不可用"} compact tone="teal" />
++              <MetricTile label="当前模型" value={formatModelLabel(currentSession?.modelName)} subvalue={currentSession?.cost ? `当前会话费用 ${formatUsd(currentSession.cost.totalUsd)}` : "当前会话费用不可用"} compact tone="teal" wrapValue />
+             </div>
+           )}
+         </SectionCard>
+@@ -747,7 +747,7 @@ function CodexDashboard({
+ 
+       <SectionCard title="全部会话与账单" description="会话详情、账单走势与来源筛选" className="rounded-2xl lg:col-span-2">
+         <Tabs value={sessionsTab} onValueChange={setSessionsTab}>
+-          <TabsList>
++          <TabsList className="w-full sm:w-auto">
+             <TabsTrigger value="sessions">全部会话</TabsTrigger>
+             <TabsTrigger value="billing">账单走势</TabsTrigger>
+           </TabsList>
+@@ -823,61 +823,119 @@ function CodexDashboard({
+               </div>
+             </div>
+ 
+-            <ScrollArea className="mt-4 overflow-hidden rounded-xl border">
+-              <Table className="min-w-[1080px]">
+-                <TableHeader>
+-                  <TableRow>
+-                    <TableHead>会话ID</TableHead>
+-                    <TableHead>标题</TableHead>
+-                    <TableHead>来源</TableHead>
+-                    <TableHead>模型</TableHead>
+-                    <TableHead>状态</TableHead>
+-                    <TableHead>创建时间</TableHead>
+-                    <TableHead>消耗</TableHead>
+-                    <TableHead>费用</TableHead>
+-                    <TableHead>更新时间</TableHead>
+-                    <TableHead className="text-right">详情</TableHead>
+-                  </TableRow>
+-                </TableHeader>
+-                <TableBody>
+-                  {pageRows.length ? (
+-                    pageRows.map((thread) => (
+-                      <TableRow key={thread.id}>
+-                        <TableCell className="mono max-w-[180px] break-all text-xs text-muted-foreground">{thread.id}</TableCell>
+-                        <TableCell className="min-w-[260px]">
+-                          <div className="line-clamp-2 font-semibold">{thread.titlePreview || thread.title || "(untitled)"}</div>
+-                          <div className="mt-1 truncate text-xs text-muted-foreground">{thread.workspaceLabel || thread.cwd || "-"}</div>
+-                        </TableCell>
+-                        <TableCell>
+-                          <Badge variant={originBadgeVariant(thread.usageOrigin)}>{thread.usageOriginLabel || "Codex 本地"}</Badge>
+-                        </TableCell>
+-                        <TableCell>{formatModelLabel(thread.modelName)}</TableCell>
+-                        <TableCell>
+-                          <Badge variant={statusBadgeVariant(thread.statusLabel)}>{thread.statusLabel || "未知"}</Badge>
+-                        </TableCell>
+-                        <TableCell>{formatResetTime(thread.createdAt)}</TableCell>
+-                        <TableCell className="mono">{formatTokenMillions(thread.tokensUsed)}</TableCell>
+-                        <TableCell className="mono">{thread.cost ? formatUsd(thread.cost.totalUsd) : "-"}</TableCell>
+-                        <TableCell>{formatResetTime(thread.updatedAt)}</TableCell>
+-                        <TableCell className="text-right">
+-                          <Button variant="outline" size="sm" onClick={() => setSelectedThreadId(thread.id)}>
+-                            详情
+-                          </Button>
+-                        </TableCell>
+-                      </TableRow>
+-                    ))
+-                  ) : (
++            <div className="mt-4 space-y-3 md:hidden">
++              {pageRows.length ? (
++                pageRows.map((thread) => (
++                  <Card key={thread.id} className="rounded-xl shadow-none">
++                    <CardContent className="space-y-3 p-4">
++                      <div className="flex items-start justify-between gap-3">
++                        <div className="min-w-0">
++                          <div className="line-clamp-2 text-base font-semibold leading-6">
++                            {thread.titlePreview || thread.title || "(untitled)"}
++                          </div>
++                          <div className="mt-1 truncate text-xs text-muted-foreground">
++                            {thread.workspaceLabel || thread.cwd || "-"}
++                          </div>
++                        </div>
++                        <Button variant="outline" size="sm" className="shrink-0" onClick={() => setSelectedThreadId(thread.id)}>
++                          详情
++                        </Button>
++                      </div>
++
++                      <div className="flex flex-wrap gap-2">
++                        <Badge variant={originBadgeVariant(thread.usageOrigin)}>{thread.usageOriginLabel || "Codex 本地"}</Badge>
++                        <Badge variant={statusBadgeVariant(thread.statusLabel)}>{thread.statusLabel || "未知"}</Badge>
++                        <Badge variant="secondary">{formatModelLabel(thread.modelName)}</Badge>
++                      </div>
++
++                      <div className="grid grid-cols-2 gap-3 rounded-lg bg-muted/40 p-3 text-sm">
++                        <div>
++                          <Label className="mb-1 block tracking-[0.14em]">消耗</Label>
++                          <div className="mono">{formatTokenMillions(thread.tokensUsed)}</div>
++                        </div>
++                        <div>
++                          <Label className="mb-1 block tracking-[0.14em]">费用</Label>
++                          <div className="mono">{thread.cost ? formatUsd(thread.cost.totalUsd) : "-"}</div>
++                        </div>
++                        <div>
++                          <Label className="mb-1 block tracking-[0.14em]">创建</Label>
++                          <div>{formatResetTime(thread.createdAt)}</div>
++                        </div>
++                        <div>
++                          <Label className="mb-1 block tracking-[0.14em]">更新</Label>
++                          <div>{formatResetTime(thread.updatedAt)}</div>
++                        </div>
++                      </div>
++
++                      <div className="border-t pt-3">
++                        <Label className="mb-1 block tracking-[0.14em]">会话 ID</Label>
++                        <div className="mono break-all text-xs text-muted-foreground">{thread.id}</div>
++                      </div>
++                    </CardContent>
++                  </Card>
++                ))
++              ) : (
++                <EmptyState>没有符合条件的会话</EmptyState>
++              )}
++            </div>
++
++            <div className="mt-4 hidden md:block">
++              <ScrollArea className="overflow-hidden rounded-xl border">
++                <Table className="min-w-[1080px]">
++                  <TableHeader>
+                     <TableRow>
+-                      <TableCell colSpan={10} className="text-center text-muted-foreground">
+-                        没有符合条件的会话
+-                      </TableCell>
++                      <TableHead>会话ID</TableHead>
++                      <TableHead>标题</TableHead>
++                      <TableHead>来源</TableHead>
++                      <TableHead>模型</TableHead>
++                      <TableHead>状态</TableHead>
++                      <TableHead>创建时间</TableHead>
++                      <TableHead>消耗</TableHead>
++                      <TableHead>费用</TableHead>
++                      <TableHead>更新时间</TableHead>
++                      <TableHead className="text-right">详情</TableHead>
+                     </TableRow>
+-                  )}
+-                </TableBody>
+-              </Table>
+-            </ScrollArea>
++                  </TableHeader>
++                  <TableBody>
++                    {pageRows.length ? (
++                      pageRows.map((thread) => (
++                        <TableRow key={thread.id}>
++                          <TableCell className="mono max-w-[180px] break-all text-xs text-muted-foreground">{thread.id}</TableCell>
++                          <TableCell className="min-w-[260px]">
++                            <div className="line-clamp-2 font-semibold">{thread.titlePreview || thread.title || "(untitled)"}</div>
++                            <div className="mt-1 truncate text-xs text-muted-foreground">{thread.workspaceLabel || thread.cwd || "-"}</div>
++                          </TableCell>
++                          <TableCell>
++                            <Badge variant={originBadgeVariant(thread.usageOrigin)}>{thread.usageOriginLabel || "Codex 本地"}</Badge>
++                          </TableCell>
++                          <TableCell>{formatModelLabel(thread.modelName)}</TableCell>
++                          <TableCell>
++                            <Badge variant={statusBadgeVariant(thread.statusLabel)}>{thread.statusLabel || "未知"}</Badge>
++                          </TableCell>
++                          <TableCell>{formatResetTime(thread.createdAt)}</TableCell>
++                          <TableCell className="mono">{formatTokenMillions(thread.tokensUsed)}</TableCell>
++                          <TableCell className="mono">{thread.cost ? formatUsd(thread.cost.totalUsd) : "-"}</TableCell>
++                          <TableCell>{formatResetTime(thread.updatedAt)}</TableCell>
++                          <TableCell className="text-right">
++                            <Button variant="outline" size="sm" onClick={() => setSelectedThreadId(thread.id)}>
++                              详情
++                            </Button>
++                          </TableCell>
++                        </TableRow>
++                      ))
++                    ) : (
++                      <TableRow>
++                        <TableCell colSpan={10} className="text-center text-muted-foreground">
++                          没有符合条件的会话
++                        </TableCell>
++                      </TableRow>
++                    )}
++                  </TableBody>
++                </Table>
++              </ScrollArea>
++            </div>
+ 
+-            <div className="mt-4 flex items-center justify-end gap-3 text-sm text-muted-foreground">
++            <div className="mt-4 flex flex-col gap-2 text-sm text-muted-foreground sm:flex-row sm:items-center sm:justify-end sm:gap-3">
+               <Button variant="outline" size="sm" disabled={safePage <= 1} onClick={() => setSessionPage((page) => Math.max(1, page - 1))}>
+                 上一页
+               </Button>
+@@ -891,7 +949,7 @@ function CodexDashboard({
+           <TabsContent value="billing">
+             <div className="mt-4 flex flex-wrap items-center justify-between gap-4">
+               <Tabs value={billingScope} onValueChange={setBillingScope}>
+-                <TabsList>
++                <TabsList className="w-full sm:w-auto">
+                   <TabsTrigger value="cumulative">累计</TabsTrigger>
+                   <TabsTrigger value="month">自然月</TabsTrigger>
+                 </TabsList>
+@@ -975,12 +1033,12 @@ function CodexDashboard({
+                 </CardHeader>
+                 <CardContent className="pt-0">
+                   <ScrollArea className="overflow-hidden rounded-xl border">
+-                    <Table className="min-w-[420px]">
++                    <Table className="min-w-full table-fixed">
+                       <TableHeader>
+                         <TableRow>
+-                          <TableHead>日期</TableHead>
+-                          <TableHead className="text-right">Token</TableHead>
+-                          <TableHead className="text-right">费用</TableHead>
++                          <TableHead className="w-[40%]">日期</TableHead>
++                          <TableHead className="w-[30%] text-right">Token</TableHead>
++                          <TableHead className="w-[30%] text-right">费用</TableHead>
+                         </TableRow>
+                       </TableHeader>
+                       <TableBody>
+@@ -1027,8 +1085,8 @@ function OpenClawPanel({ snapshot }) {
+           <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-1">
+             <MetricTile label="当前 OAuth Session Token" value={formatTokenMillions(openclaw.session?.totalTokens)} subvalue={`当前费用 ${formatUsd(openclaw.session?.totalUsd)}`} />
+             <MetricTile label="近 30 天 OAuth Token" value={formatTokenMillions(openclaw.totals?.totalTokens)} subvalue={`近 30 天费用 ${formatUsd(openclaw.totals?.totalUsd)}`} tone="muted" />
+-            <MetricTile label="当前配置模型" value={formatModelLabel(openclaw.configuredModel)} subvalue={leadModel ? `费用主模型 ${formatModelLabel(leadModel.modelName)} · ${formatUsd(leadModel.totalUsd)}` : "费用主模型 -"} compact tone="teal" />
+-            <MetricTile label="数据来源" value={formatUsageSource(openclaw.source)} subvalue={openclaw.updatedAt ? `最近更新 ${new Date(openclaw.updatedAt).toLocaleString("zh-CN")}` : "更新时间不可用"} compact />
++            <MetricTile label="当前配置模型" value={formatModelLabel(openclaw.configuredModel)} subvalue={leadModel ? `费用主模型 ${formatModelLabel(leadModel.modelName)} · ${formatUsd(leadModel.totalUsd)}` : "费用主模型 -"} compact tone="teal" wrapValue />
++            <MetricTile label="数据来源" value={formatUsageSource(openclaw.source)} subvalue={openclaw.updatedAt ? `最近更新 ${new Date(openclaw.updatedAt).toLocaleString("zh-CN")}` : "更新时间不可用"} compact wrapValue />
+           </div>
+ 
+           <div className="mt-4 grid gap-4 xl:grid-cols-1">
+@@ -1049,12 +1107,12 @@ function OpenClawPanel({ snapshot }) {
+               </CardHeader>
+               <CardContent className="pt-0">
+                 <ScrollArea className="overflow-hidden rounded-xl border">
+-                  <Table className="min-w-[360px]">
++                  <Table className="min-w-full table-fixed">
+                     <TableHeader>
+                       <TableRow>
+-                        <TableHead>日期</TableHead>
+-                        <TableHead className="text-right">Token</TableHead>
+-                        <TableHead className="text-right">费用</TableHead>
++                        <TableHead className="w-[40%]">日期</TableHead>
++                        <TableHead className="w-[30%] text-right">Token</TableHead>
++                        <TableHead className="w-[30%] text-right">费用</TableHead>
+                       </TableRow>
+                     </TableHeader>
+                     <TableBody>
+@@ -1107,7 +1165,7 @@ export default function App() {
+   }
+ 
+   return (
+-    <div className="mx-auto max-w-[1520px] space-y-5 px-4 py-6 md:px-6 lg:space-y-6 lg:px-8 lg:py-8">
++    <div className="mx-auto max-w-[1520px] space-y-4 px-3.5 py-4 sm:px-4 sm:py-6 md:px-6 lg:space-y-6 lg:px-8 lg:py-8">
+       <PageHeader
+         connectionLabel={connectionLabel}
+         connectionVariant={connectionBadgeVariant(connectionLabel)}
+@@ -1118,15 +1176,15 @@ export default function App() {
+ 
+       <div className="lg:hidden">
+         <Tabs value={sourceView} onValueChange={setSourceView}>
+-          <TabsList className="grid w-full grid-cols-2">
+-            <TabsTrigger value="codex">Codex 本地</TabsTrigger>
+-            <TabsTrigger value="openclaw">OpenClaw / OAuth</TabsTrigger>
++          <TabsList className="grid h-auto w-full grid-cols-2">
++            <TabsTrigger value="codex" className="text-xs sm:text-sm">Codex 本地</TabsTrigger>
++            <TabsTrigger value="openclaw" className="text-xs sm:text-sm">OpenClaw / OAuth</TabsTrigger>
+           </TabsList>
+         </Tabs>
+       </div>
+ 
+-      <div className="grid gap-6 lg:grid-cols-[minmax(0,1.55fr)_minmax(320px,0.95fr)]">
+-        <div className={cn(sourceView === "codex" ? "block" : "hidden", "space-y-6 lg:block")}>
++      <div className="grid min-w-0 gap-6 lg:grid-cols-[minmax(0,1.55fr)_minmax(320px,0.95fr)]">
++        <div className={cn(sourceView === "codex" ? "block" : "hidden", "min-w-0 space-y-6 lg:block")}>
+           <CodexDashboard
+             snapshot={snapshot}
+             connectionLabel={connectionLabel}
+@@ -1137,7 +1195,7 @@ export default function App() {
+           />
+         </div>
+ 
+-        <div className={cn(sourceView === "openclaw" ? "block" : "hidden", "lg:block")}>
++        <div className={cn(sourceView === "openclaw" ? "block" : "hidden", "min-w-0 lg:block")}>
+           <OpenClawPanel snapshot={snapshot} />
+         </div>
+       </div>
+diff --git a/src/components/dashboard/metric-tile.jsx b/src/components/dashboard/metric-tile.jsx
+index d70d211..9cec8d7 100644
+--- a/src/components/dashboard/metric-tile.jsx
++++ b/src/components/dashboard/metric-tile.jsx
+@@ -4,8 +4,8 @@ import { cn } from "@/lib/utils.js";
+ 
+ export function MetricTileSkeleton() {
+   return (
+-    <Card className="rounded-xl border shadow-none">
+-      <CardContent className="flex min-h-[132px] flex-col gap-4 p-4">
++    <Card className="min-w-0 rounded-xl border shadow-none">
++      <CardContent className="flex min-h-[132px] min-w-0 flex-col gap-4 p-4">
+         <Skeleton className="h-3 w-28" />
+         <Skeleton className="h-10 w-32" />
+         <Skeleton className="mt-auto h-4 w-40" />
+@@ -36,11 +36,10 @@ export function MetricTile({
+         <div
+           className={cn(
+             "mono min-w-0 max-w-full leading-none",
+-            compact ? "text-[2rem] md:text-[2.4rem]" : "text-[2.2rem] md:text-[2.8rem]"
+-            ,
++            compact ? "text-[1.72rem] sm:text-[2rem] md:text-[2.4rem]" : "text-[1.95rem] sm:text-[2.2rem] md:text-[2.8rem]",
+             wrapValue
+               ? "break-words whitespace-normal tracking-[-0.03em] leading-[1.06]"
+-              : "overflow-hidden text-ellipsis whitespace-nowrap tracking-[-0.05em]"
++              : "whitespace-nowrap tracking-[-0.05em]"
+           )}
+         >
+           {value}
+diff --git a/src/components/dashboard/page-header.jsx b/src/components/dashboard/page-header.jsx
+index 2f87b1f..81e6c3a 100644
+--- a/src/components/dashboard/page-header.jsx
++++ b/src/components/dashboard/page-header.jsx
+@@ -3,16 +3,20 @@ import { Card, CardContent } from "@/components/ui/card.jsx";
+ 
+ export function PageHeader({ connectionLabel, connectionVariant, planLabel }) {
+   return (
+-    <Card className="rounded-2xl">
+-      <CardContent className="flex flex-col gap-5 p-6 lg:flex-row lg:items-start lg:justify-between">
+-        <div className="space-y-3">
+-          <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted-foreground">Codex Local Usage Dashboard</div>
+-          <div className="text-4xl font-semibold tracking-[-0.06em] lg:text-6xl">Codex用量统计</div>
+-          <p className="max-w-3xl text-sm leading-7 text-muted-foreground md:text-[15px]">
++    <Card className="overflow-hidden rounded-2xl">
++      <CardContent className="flex flex-col gap-4 px-5 py-5 sm:p-6 lg:flex-row lg:items-start lg:justify-between">
++        <div className="min-w-0 space-y-3">
++          <div className="text-[10px] font-semibold uppercase tracking-[0.2em] text-muted-foreground sm:text-[11px]">
++            Codex Local Usage Dashboard
++          </div>
++          <div className="text-[2rem] font-semibold leading-none tracking-[-0.07em] sm:text-4xl lg:text-6xl">
++            Codex用量统计
++          </div>
++          <p className="max-w-[34rem] text-sm leading-6 text-muted-foreground md:text-[15px] md:leading-7">
+             本地 Codex 与 OpenClaw / OAuth 用量分开展示，优先保留高密度信息。
+           </p>
+         </div>
+-        <div className="flex flex-wrap items-center gap-3">
++        <div className="flex flex-wrap items-center gap-2 sm:justify-end sm:gap-3">
+           <Badge variant={connectionVariant}>{connectionLabel}</Badge>
+           <Badge variant="secondary">订阅计划 {planLabel}</Badge>
+         </div>
+diff --git a/src/components/dashboard/section-card.jsx b/src/components/dashboard/section-card.jsx
+index af9a43c..89b4813 100644
+--- a/src/components/dashboard/section-card.jsx
++++ b/src/components/dashboard/section-card.jsx
+@@ -3,15 +3,15 @@ import { cn } from "@/lib/utils.js";
+ 
+ export function SectionCard({ title, description, actions, children, className = "" }) {
+   return (
+-    <Card className={cn("rounded-2xl", className)}>
+-      <CardHeader className="flex flex-row items-start justify-between gap-4 pb-5">
+-        <div className="space-y-1">
+-          <CardTitle>{title}</CardTitle>
+-          {description ? <CardDescription>{description}</CardDescription> : null}
++    <Card className={cn("min-w-0 overflow-hidden rounded-2xl", className)}>
++      <CardHeader className="flex flex-col gap-3 pb-5 sm:flex-row sm:items-start sm:justify-between">
++        <div className="min-w-0 space-y-1">
++          <CardTitle className="text-xl sm:text-2xl">{title}</CardTitle>
++          {description ? <CardDescription className="max-w-3xl leading-6">{description}</CardDescription> : null}
+         </div>
+-        {actions}
++        {actions ? <div className="w-full min-w-0 sm:w-auto sm:shrink-0">{actions}</div> : null}
+       </CardHeader>
+-      <CardContent className="pt-0">{children}</CardContent>
++      <CardContent className="min-w-0 pt-0">{children}</CardContent>
+     </Card>
+   );
+ }
+diff --git a/src/components/ui/card.jsx b/src/components/ui/card.jsx
+index 4c3faf2..04b1274 100644
+--- a/src/components/ui/card.jsx
++++ b/src/components/ui/card.jsx
+@@ -5,14 +5,14 @@ import { cn } from "../../lib/utils.js";
+ const Card = React.forwardRef(({ className, ...props }, ref) => (
+   <div
+     ref={ref}
+-    className={cn("rounded-xl border bg-card text-card-foreground shadow-sm", className)}
++    className={cn("min-w-0 rounded-xl border bg-card text-card-foreground shadow-sm", className)}
+     {...props}
+   />
+ ));
+ Card.displayName = "Card";
+ 
+ const CardHeader = React.forwardRef(({ className, ...props }, ref) => (
+-  <div ref={ref} className={cn("flex flex-col space-y-1.5 p-6", className)} {...props} />
++  <div ref={ref} className={cn("min-w-0 flex flex-col space-y-1.5 p-6", className)} {...props} />
+ ));
+ CardHeader.displayName = "CardHeader";
+ 
+@@ -27,12 +27,12 @@ const CardDescription = React.forwardRef(({ className, ...props }, ref) => (
+ CardDescription.displayName = "CardDescription";
+ 
+ const CardContent = React.forwardRef(({ className, ...props }, ref) => (
+-  <div ref={ref} className={cn("p-6 pt-0", className)} {...props} />
++  <div ref={ref} className={cn("min-w-0 p-6 pt-0", className)} {...props} />
+ ));
+ CardContent.displayName = "CardContent";
+ 
+ const CardFooter = React.forwardRef(({ className, ...props }, ref) => (
+-  <div ref={ref} className={cn("flex items-center p-6 pt-0", className)} {...props} />
++  <div ref={ref} className={cn("min-w-0 flex items-center p-6 pt-0", className)} {...props} />
+ ));
+ CardFooter.displayName = "CardFooter";
+ 
+diff --git a/src/components/ui/table.jsx b/src/components/ui/table.jsx
+index b12dc49..8706dbb 100644
+--- a/src/components/ui/table.jsx
++++ b/src/components/ui/table.jsx
+@@ -3,7 +3,7 @@ import React from "react";
+ import { cn } from "../../lib/utils.js";
+ 
+ const Table = React.forwardRef(({ className, ...props }, ref) => (
+-  <div className="relative w-full overflow-auto">
++  <div className="relative w-full min-w-0 overflow-auto">
+     <table ref={ref} className={cn("w-full caption-bottom text-sm", className)} {...props} />
+   </div>
+ ));

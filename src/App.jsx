@@ -440,9 +440,9 @@ function BillingChart({ rows }) {
   const costFill = "color-mix(in srgb, var(--accent) 24%, transparent)";
 
   return (
-    <div className="rounded-xl border bg-background p-4">
+    <div className="min-w-0 rounded-xl border bg-background p-3 sm:p-4">
       {chartRows.length > 1 ? (
-        <div className="h-[320px]">
+        <div className="h-[280px] sm:h-[320px]">
           <ResponsiveContainer width="100%" height="100%">
             <AreaChart data={chartRows} margin={{ left: 8, right: 8, top: 12, bottom: 0 }}>
               <CartesianGrid vertical={false} stroke={gridColor} />
@@ -570,7 +570,7 @@ function CodexDashboard({
   const secondary = rateLimits?.secondary || null;
 
   const sourceCards = (
-    <div className="flex flex-wrap items-center gap-3">
+    <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto sm:justify-end sm:gap-3">
       <Badge variant={connectionBadgeVariant(connectionLabel)}>{connectionLabel}</Badge>
       <Badge variant="secondary">订阅计划 {formatPlanName(rateLimits?.planType)}</Badge>
     </div>
@@ -619,7 +619,7 @@ function CodexDashboard({
             value={Math.max(0, Math.min(100, Number(windowData?.usedPercent || 0)))}
             indicatorClassName={stale ? "bg-amber-500" : "bg-primary"}
           />
-          <div className="space-y-1 text-sm text-muted-foreground">
+          <div className="space-y-1 break-words text-sm text-muted-foreground">
             <p>剩余 {formatPercent(windowData?.remainingPercent)}</p>
             <p>{buildResetCopy(windowData)}</p>
           </div>
@@ -636,10 +636,10 @@ function CodexDashboard({
 
   return (
     <>
-      <div className="grid gap-5">
+      <div className="grid min-w-0 gap-5">
         <SectionCard title="数据源与刷新" description="本地数据源、目录切换与来源说明" actions={sourceCards}>
-          <div className="grid gap-4 lg:grid-cols-[minmax(0,1.1fr)_minmax(320px,0.9fr)]">
-            <div className="grid gap-4 md:grid-cols-2">
+          <div className="grid min-w-0 gap-4 lg:grid-cols-[minmax(0,1.1fr)_minmax(320px,0.9fr)]">
+            <div className="grid min-w-0 gap-4 md:grid-cols-2">
               <Card className="rounded-xl bg-muted/40 shadow-none">
                 <CardContent className="space-y-2 p-4">
                   <Label>读取范围</Label>
@@ -655,15 +655,15 @@ function CodexDashboard({
                 </CardContent>
               </Card>
             </div>
-            <Card className="rounded-xl shadow-none">
-              <CardContent className="space-y-4 p-4">
-                <div className="space-y-1">
-                  <Label>实时状态</Label>
-                  <div className="text-sm text-muted-foreground">最近更新 {new Date(snapshot.generatedAt).toLocaleString("zh-CN")}</div>
-                  <div className="text-sm font-medium">当前目录 {snapshot.sources.codexHome || "-"}</div>
-                </div>
-                <form
-                  className="grid gap-3"
+              <Card className="rounded-xl shadow-none">
+                <CardContent className="space-y-4 p-4">
+                  <div className="space-y-1">
+                    <Label>实时状态</Label>
+                    <div className="text-sm text-muted-foreground">最近更新 {new Date(snapshot.generatedAt).toLocaleString("zh-CN")}</div>
+                    <div className="break-all text-sm font-medium">当前目录 {snapshot.sources.codexHome || "-"}</div>
+                  </div>
+                  <form
+                    className="grid gap-3"
                   onSubmit={(event) => {
                     event.preventDefault();
                     onApplySource();
@@ -697,7 +697,7 @@ function CodexDashboard({
               <MetricTile label="Codex 本地线程数" value={formatTokenRaw(snapshot.overview.totalThreads)} subvalue="未归档会话" />
               <MetricTile label="当前 Codex 线程" value={currentSession ? formatTokenMillions(currentSession.totalTokens) : "-"} subvalue={currentSession ? `${currentSession.usageOriginLabel || "Codex 本地"} · 最近一次 ${formatTokenMillions(currentSession.lastTokens)}` : "最近一次不可用"} tone="dark" />
               <MetricTile label="Codex 本地累计费用" value={formatUsd(snapshot.overview.totalEstimatedCost)} subvalue="根据本地日志里的每次增量使用记录估算" compact tone="muted" />
-              <MetricTile label="当前模型" value={formatModelLabel(currentSession?.modelName)} subvalue={currentSession?.cost ? `当前会话费用 ${formatUsd(currentSession.cost.totalUsd)}` : "当前会话费用不可用"} compact tone="teal" />
+              <MetricTile label="当前模型" value={formatModelLabel(currentSession?.modelName)} subvalue={currentSession?.cost ? `当前会话费用 ${formatUsd(currentSession.cost.totalUsd)}` : "当前会话费用不可用"} compact tone="teal" wrapValue />
             </div>
           )}
         </SectionCard>
@@ -747,7 +747,7 @@ function CodexDashboard({
 
       <SectionCard title="全部会话与账单" description="会话详情、账单走势与来源筛选" className="rounded-2xl lg:col-span-2">
         <Tabs value={sessionsTab} onValueChange={setSessionsTab}>
-          <TabsList>
+          <TabsList className="w-full sm:w-auto">
             <TabsTrigger value="sessions">全部会话</TabsTrigger>
             <TabsTrigger value="billing">账单走势</TabsTrigger>
           </TabsList>
@@ -823,61 +823,119 @@ function CodexDashboard({
               </div>
             </div>
 
-            <ScrollArea className="mt-4 overflow-hidden rounded-xl border">
-              <Table className="min-w-[1080px]">
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>会话ID</TableHead>
-                    <TableHead>标题</TableHead>
-                    <TableHead>来源</TableHead>
-                    <TableHead>模型</TableHead>
-                    <TableHead>状态</TableHead>
-                    <TableHead>创建时间</TableHead>
-                    <TableHead>消耗</TableHead>
-                    <TableHead>费用</TableHead>
-                    <TableHead>更新时间</TableHead>
-                    <TableHead className="text-right">详情</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {pageRows.length ? (
-                    pageRows.map((thread) => (
-                      <TableRow key={thread.id}>
-                        <TableCell className="mono max-w-[180px] break-all text-xs text-muted-foreground">{thread.id}</TableCell>
-                        <TableCell className="min-w-[260px]">
-                          <div className="line-clamp-2 font-semibold">{thread.titlePreview || thread.title || "(untitled)"}</div>
-                          <div className="mt-1 truncate text-xs text-muted-foreground">{thread.workspaceLabel || thread.cwd || "-"}</div>
-                        </TableCell>
-                        <TableCell>
-                          <Badge variant={originBadgeVariant(thread.usageOrigin)}>{thread.usageOriginLabel || "Codex 本地"}</Badge>
-                        </TableCell>
-                        <TableCell>{formatModelLabel(thread.modelName)}</TableCell>
-                        <TableCell>
-                          <Badge variant={statusBadgeVariant(thread.statusLabel)}>{thread.statusLabel || "未知"}</Badge>
-                        </TableCell>
-                        <TableCell>{formatResetTime(thread.createdAt)}</TableCell>
-                        <TableCell className="mono">{formatTokenMillions(thread.tokensUsed)}</TableCell>
-                        <TableCell className="mono">{thread.cost ? formatUsd(thread.cost.totalUsd) : "-"}</TableCell>
-                        <TableCell>{formatResetTime(thread.updatedAt)}</TableCell>
-                        <TableCell className="text-right">
-                          <Button variant="outline" size="sm" onClick={() => setSelectedThreadId(thread.id)}>
-                            详情
-                          </Button>
+            <div className="mt-4 space-y-3 md:hidden">
+              {pageRows.length ? (
+                pageRows.map((thread) => (
+                  <Card key={thread.id} className="rounded-xl shadow-none">
+                    <CardContent className="space-y-3 p-4">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <div className="line-clamp-2 text-base font-semibold leading-6">
+                            {thread.titlePreview || thread.title || "(untitled)"}
+                          </div>
+                          <div className="mt-1 truncate text-xs text-muted-foreground">
+                            {thread.workspaceLabel || thread.cwd || "-"}
+                          </div>
+                        </div>
+                        <Button variant="outline" size="sm" className="shrink-0" onClick={() => setSelectedThreadId(thread.id)}>
+                          详情
+                        </Button>
+                      </div>
+
+                      <div className="flex flex-wrap gap-2">
+                        <Badge variant={originBadgeVariant(thread.usageOrigin)}>{thread.usageOriginLabel || "Codex 本地"}</Badge>
+                        <Badge variant={statusBadgeVariant(thread.statusLabel)}>{thread.statusLabel || "未知"}</Badge>
+                        <Badge variant="secondary">{formatModelLabel(thread.modelName)}</Badge>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-3 rounded-lg bg-muted/40 p-3 text-sm">
+                        <div>
+                          <Label className="mb-1 block tracking-[0.14em]">消耗</Label>
+                          <div className="mono">{formatTokenMillions(thread.tokensUsed)}</div>
+                        </div>
+                        <div>
+                          <Label className="mb-1 block tracking-[0.14em]">费用</Label>
+                          <div className="mono">{thread.cost ? formatUsd(thread.cost.totalUsd) : "-"}</div>
+                        </div>
+                        <div>
+                          <Label className="mb-1 block tracking-[0.14em]">创建</Label>
+                          <div>{formatResetTime(thread.createdAt)}</div>
+                        </div>
+                        <div>
+                          <Label className="mb-1 block tracking-[0.14em]">更新</Label>
+                          <div>{formatResetTime(thread.updatedAt)}</div>
+                        </div>
+                      </div>
+
+                      <div className="border-t pt-3">
+                        <Label className="mb-1 block tracking-[0.14em]">会话 ID</Label>
+                        <div className="mono break-all text-xs text-muted-foreground">{thread.id}</div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))
+              ) : (
+                <EmptyState>没有符合条件的会话</EmptyState>
+              )}
+            </div>
+
+            <div className="mt-4 hidden md:block">
+              <ScrollArea className="overflow-hidden rounded-xl border">
+                <Table className="min-w-[1080px]">
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>会话ID</TableHead>
+                      <TableHead>标题</TableHead>
+                      <TableHead>来源</TableHead>
+                      <TableHead>模型</TableHead>
+                      <TableHead>状态</TableHead>
+                      <TableHead>创建时间</TableHead>
+                      <TableHead>消耗</TableHead>
+                      <TableHead>费用</TableHead>
+                      <TableHead>更新时间</TableHead>
+                      <TableHead className="text-right">详情</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {pageRows.length ? (
+                      pageRows.map((thread) => (
+                        <TableRow key={thread.id}>
+                          <TableCell className="mono max-w-[180px] break-all text-xs text-muted-foreground">{thread.id}</TableCell>
+                          <TableCell className="min-w-[260px]">
+                            <div className="line-clamp-2 font-semibold">{thread.titlePreview || thread.title || "(untitled)"}</div>
+                            <div className="mt-1 truncate text-xs text-muted-foreground">{thread.workspaceLabel || thread.cwd || "-"}</div>
+                          </TableCell>
+                          <TableCell>
+                            <Badge variant={originBadgeVariant(thread.usageOrigin)}>{thread.usageOriginLabel || "Codex 本地"}</Badge>
+                          </TableCell>
+                          <TableCell>{formatModelLabel(thread.modelName)}</TableCell>
+                          <TableCell>
+                            <Badge variant={statusBadgeVariant(thread.statusLabel)}>{thread.statusLabel || "未知"}</Badge>
+                          </TableCell>
+                          <TableCell>{formatResetTime(thread.createdAt)}</TableCell>
+                          <TableCell className="mono">{formatTokenMillions(thread.tokensUsed)}</TableCell>
+                          <TableCell className="mono">{thread.cost ? formatUsd(thread.cost.totalUsd) : "-"}</TableCell>
+                          <TableCell>{formatResetTime(thread.updatedAt)}</TableCell>
+                          <TableCell className="text-right">
+                            <Button variant="outline" size="sm" onClick={() => setSelectedThreadId(thread.id)}>
+                              详情
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      ))
+                    ) : (
+                      <TableRow>
+                        <TableCell colSpan={10} className="text-center text-muted-foreground">
+                          没有符合条件的会话
                         </TableCell>
                       </TableRow>
-                    ))
-                  ) : (
-                    <TableRow>
-                      <TableCell colSpan={10} className="text-center text-muted-foreground">
-                        没有符合条件的会话
-                      </TableCell>
-                    </TableRow>
-                  )}
-                </TableBody>
-              </Table>
-            </ScrollArea>
+                    )}
+                  </TableBody>
+                </Table>
+              </ScrollArea>
+            </div>
 
-            <div className="mt-4 flex items-center justify-end gap-3 text-sm text-muted-foreground">
+            <div className="mt-4 flex flex-col gap-2 text-sm text-muted-foreground sm:flex-row sm:items-center sm:justify-end sm:gap-3">
               <Button variant="outline" size="sm" disabled={safePage <= 1} onClick={() => setSessionPage((page) => Math.max(1, page - 1))}>
                 上一页
               </Button>
@@ -891,7 +949,7 @@ function CodexDashboard({
           <TabsContent value="billing">
             <div className="mt-4 flex flex-wrap items-center justify-between gap-4">
               <Tabs value={billingScope} onValueChange={setBillingScope}>
-                <TabsList>
+                <TabsList className="w-full sm:w-auto">
                   <TabsTrigger value="cumulative">累计</TabsTrigger>
                   <TabsTrigger value="month">自然月</TabsTrigger>
                 </TabsList>
@@ -975,12 +1033,12 @@ function CodexDashboard({
                 </CardHeader>
                 <CardContent className="pt-0">
                   <ScrollArea className="overflow-hidden rounded-xl border">
-                    <Table className="min-w-[420px]">
+                    <Table className="min-w-full table-fixed">
                       <TableHeader>
                         <TableRow>
-                          <TableHead>日期</TableHead>
-                          <TableHead className="text-right">Token</TableHead>
-                          <TableHead className="text-right">费用</TableHead>
+                          <TableHead className="w-[40%]">日期</TableHead>
+                          <TableHead className="w-[30%] text-right">Token</TableHead>
+                          <TableHead className="w-[30%] text-right">费用</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
@@ -1027,8 +1085,8 @@ function OpenClawPanel({ snapshot }) {
           <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-1">
             <MetricTile label="当前 OAuth Session Token" value={formatTokenMillions(openclaw.session?.totalTokens)} subvalue={`当前费用 ${formatUsd(openclaw.session?.totalUsd)}`} />
             <MetricTile label="近 30 天 OAuth Token" value={formatTokenMillions(openclaw.totals?.totalTokens)} subvalue={`近 30 天费用 ${formatUsd(openclaw.totals?.totalUsd)}`} tone="muted" />
-            <MetricTile label="当前配置模型" value={formatModelLabel(openclaw.configuredModel)} subvalue={leadModel ? `费用主模型 ${formatModelLabel(leadModel.modelName)} · ${formatUsd(leadModel.totalUsd)}` : "费用主模型 -"} compact tone="teal" />
-            <MetricTile label="数据来源" value={formatUsageSource(openclaw.source)} subvalue={openclaw.updatedAt ? `最近更新 ${new Date(openclaw.updatedAt).toLocaleString("zh-CN")}` : "更新时间不可用"} compact />
+            <MetricTile label="当前配置模型" value={formatModelLabel(openclaw.configuredModel)} subvalue={leadModel ? `费用主模型 ${formatModelLabel(leadModel.modelName)} · ${formatUsd(leadModel.totalUsd)}` : "费用主模型 -"} compact tone="teal" wrapValue />
+            <MetricTile label="数据来源" value={formatUsageSource(openclaw.source)} subvalue={openclaw.updatedAt ? `最近更新 ${new Date(openclaw.updatedAt).toLocaleString("zh-CN")}` : "更新时间不可用"} compact wrapValue />
           </div>
 
           <div className="mt-4 grid gap-4 xl:grid-cols-1">
@@ -1049,12 +1107,12 @@ function OpenClawPanel({ snapshot }) {
               </CardHeader>
               <CardContent className="pt-0">
                 <ScrollArea className="overflow-hidden rounded-xl border">
-                  <Table className="min-w-[360px]">
+                  <Table className="min-w-full table-fixed">
                     <TableHeader>
                       <TableRow>
-                        <TableHead>日期</TableHead>
-                        <TableHead className="text-right">Token</TableHead>
-                        <TableHead className="text-right">费用</TableHead>
+                        <TableHead className="w-[40%]">日期</TableHead>
+                        <TableHead className="w-[30%] text-right">Token</TableHead>
+                        <TableHead className="w-[30%] text-right">费用</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -1107,7 +1165,7 @@ export default function App() {
   }
 
   return (
-    <div className="mx-auto max-w-[1520px] space-y-5 px-4 py-6 md:px-6 lg:space-y-6 lg:px-8 lg:py-8">
+    <div className="mx-auto max-w-[1520px] space-y-4 px-3.5 py-4 sm:px-4 sm:py-6 md:px-6 lg:space-y-6 lg:px-8 lg:py-8">
       <PageHeader
         connectionLabel={connectionLabel}
         connectionVariant={connectionBadgeVariant(connectionLabel)}
@@ -1118,15 +1176,15 @@ export default function App() {
 
       <div className="lg:hidden">
         <Tabs value={sourceView} onValueChange={setSourceView}>
-          <TabsList className="grid w-full grid-cols-2">
-            <TabsTrigger value="codex">Codex 本地</TabsTrigger>
-            <TabsTrigger value="openclaw">OpenClaw / OAuth</TabsTrigger>
+          <TabsList className="grid h-auto w-full grid-cols-2">
+            <TabsTrigger value="codex" className="text-xs sm:text-sm">Codex 本地</TabsTrigger>
+            <TabsTrigger value="openclaw" className="text-xs sm:text-sm">OpenClaw / OAuth</TabsTrigger>
           </TabsList>
         </Tabs>
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-[minmax(0,1.55fr)_minmax(320px,0.95fr)]">
-        <div className={cn(sourceView === "codex" ? "block" : "hidden", "space-y-6 lg:block")}>
+      <div className="grid min-w-0 gap-6 lg:grid-cols-[minmax(0,1.55fr)_minmax(320px,0.95fr)]">
+        <div className={cn(sourceView === "codex" ? "block" : "hidden", "min-w-0 space-y-6 lg:block")}>
           <CodexDashboard
             snapshot={snapshot}
             connectionLabel={connectionLabel}
@@ -1137,7 +1195,7 @@ export default function App() {
           />
         </div>
 
-        <div className={cn(sourceView === "openclaw" ? "block" : "hidden", "lg:block")}>
+        <div className={cn(sourceView === "openclaw" ? "block" : "hidden", "min-w-0 lg:block")}>
           <OpenClawPanel snapshot={snapshot} />
         </div>
       </div>

@@ -1,6 +1,6 @@
 # Tasks
 
-Last updated: 2026-03-13 08:08 Asia/Shanghai
+Last updated: 2026-03-13 08:14 Asia/Shanghai
 
 | ID | Priority | Est | Slot | Status | Task | Input | Output | Validation | DoD |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -39,3 +39,5 @@ Last updated: 2026-03-13 08:08 Asia/Shanghai
 | T33 | P1 | 10m | 1 | DONE | Remove single-day Recharts warning path by gating chart rendering conditions | billing tab default 1-day range and hidden-tab render behavior | lazy billing-chart render + single-day fallback copy (table-first) | `npm test` and Playwright console check on `http://127.0.0.1:4329/` | billing tab opens without Recharts width/height warning while keeping ledger table usable |
 | T34 | P1 | 10m | 1 | DONE | Add shadcn-style regression guardrails and finalize checkpoint evidence for T28-T34 | updated dashboard source and primitives | expanded `dashboardView` assertions + checkpoint docs/log/results/patches | `npm test` and Playwright smoke | regression tests enforce no raw range inputs/slate palette regressions and all checkpoint artifacts are complete |
 | T35 | P1 | 10m | 1 | DONE | Fix table column clipping in billing/cost/pricing panels | overflow screenshot feedback from user | horizontal `ScrollArea` scrollbar + fixed table layout/column width/nowrap + safer cell wrapping | `npm test` | right-side rate/cost columns stay visible and readable instead of being clipped at card boundaries |
+| T36 | P1 | 5m | 1 | DONE | Remove metric-value ellipsis truncation so overview values stay fully readable | user screenshot feedback on truncated metric tiles | metric value typography without `text-ellipsis` truncation, model tile still wraps | `npm test` | top-overview metrics display full values (no `...`) while preserving card boundaries |
+| T37 | P0 | 20m | 1 | DONE | Optimize mobile responsiveness across the dashboard shell and session browsing | current React dashboard mobile layout | grid/card shrink guards, tighter responsive header/section spacing, mobile session cards, phone-safe 3-column tables, checkpoint docs/results/log/patch | `npm test` and Playwright mobile overflow checks on `http://127.0.0.1:4329/` | `390px` viewport shows no page-level horizontal overflow for Codex or OpenClaw views, and `全部会话` is readable on phone without dragging a 10-column table |

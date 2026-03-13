@@ -1,6 +1,6 @@
 # Risks
 
-Last updated: 2026-03-13 08:08 Asia/Shanghai
+Last updated: 2026-03-13 08:14 Asia/Shanghai
 
 | ID | Risk | Trigger | Mitigation | Rollback |
 | --- | --- | --- | --- | --- |
@@ -24,3 +24,4 @@ Last updated: 2026-03-13 08:08 Asia/Shanghai
 | R18 | Launchd startup now includes a frontend rebuild step | Vite build fails under launchd due to dependency or environment drift, preventing the dashboard from starting | keep the build command deterministic (`corepack yarn vite build`) and verify with `npm test` whenever the frontend toolchain changes | temporarily run the last successful built `public/` bundle by restoring the simpler start command if launchd build failures block service recovery |
 | R19 | Alias support now depends on both Vite and editor configuration staying aligned | future refactors change one alias path but not the other, causing IDE/import drift | keep `vite.config.mjs`, `jsconfig.json`, and `components.json` in sync when aliases move | revert to relative imports until alias configuration is repaired |
 | R20 | Billing chart warning can reappear if future refactors remove the single-day fallback or active-tab gating | restoring always-on Recharts render for hidden tabs or 1-day windows | keep Playwright console warning checks and preserve the table-first fallback for 0/1-day windows | if warnings return, disable chart rendering for small ranges and re-enable only after validating container-size stability |
+| R21 | Mobile session browsing now has both card and table render paths | future session-field changes update the desktop table but not the mobile card layout | keep both views driven from the same `pageRows` data and include phone + desktop checks when session-row fields change | temporarily fall back to the desktop table on all breakpoints if card/table parity breaks |

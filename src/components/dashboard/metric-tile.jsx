@@ -4,8 +4,8 @@ import { cn } from "@/lib/utils.js";
 
 export function MetricTileSkeleton() {
   return (
-    <Card className="rounded-xl border shadow-none">
-      <CardContent className="flex min-h-[132px] flex-col gap-4 p-4">
+    <Card className="min-w-0 rounded-xl border shadow-none">
+      <CardContent className="flex min-h-[132px] min-w-0 flex-col gap-4 p-4">
         <Skeleton className="h-3 w-28" />
         <Skeleton className="h-10 w-32" />
         <Skeleton className="mt-auto h-4 w-40" />
@@ -36,11 +36,10 @@ export function MetricTile({
         <div
           className={cn(
             "mono min-w-0 max-w-full leading-none",
-            compact ? "text-[2rem] md:text-[2.4rem]" : "text-[2.2rem] md:text-[2.8rem]"
-            ,
+            compact ? "text-[1.72rem] sm:text-[2rem] md:text-[2.4rem]" : "text-[1.95rem] sm:text-[2.2rem] md:text-[2.8rem]",
             wrapValue
               ? "break-words whitespace-normal tracking-[-0.03em] leading-[1.06]"
-              : "overflow-hidden text-ellipsis whitespace-nowrap tracking-[-0.05em]"
+              : "whitespace-nowrap tracking-[-0.05em]"
           )}
         >
           {value}
