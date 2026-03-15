@@ -1,6 +1,6 @@
 # Metrics
 
-Last updated: 2026-03-13 08:14 Asia/Shanghai
+Last updated: 2026-03-14 14:41 Asia/Shanghai
 
 | Round | Metric | Value | Notes |
 | --- | --- | --- | --- |
@@ -80,3 +80,38 @@ Last updated: 2026-03-13 08:14 Asia/Shanghai
 | 24 | Mobile session browsing | enabled | Playwright mobile snapshot shows card-based session browsing replacing the 10-column session table on `全部会话` |
 | 24 | Browser console errors | 0 | Playwright error-level console capture on `http://127.0.0.1:4329/` returned no messages after the mobile pass on 2026-03-13 08:13 Asia/Shanghai |
 | 24 | Automated tests | 28 passing | `npm test` on 2026-03-13 08:13 Asia/Shanghai after the T37 mobile responsiveness pass |
+| 25 | Access gate regression test | 17 passing | `node --test test/dashboardView.test.js` on 2026-03-13 08:52 Asia/Shanghai after adding the local password gate assertions |
+| 25 | Full verification | 29 passing | `npm test` on 2026-03-13 08:52 Asia/Shanghai after the T38 access-gate pass |
+| 25 | Device remember state | enabled | dashboard now persists authorization under `localStorage['codex-dashboard-access-granted']` until manual relock |
+| 26 | Alert regression test | 29 passing | `node --test test/dashboardView.test.js` on 2026-03-13 10:28 Asia/Shanghai after adding threshold-alert and hover-copy coverage |
+| 26 | App route compatibility | pass | `node --test test/app.test.js` on 2026-03-13 10:32 Asia/Shanghai after restoring SPA deep-link + refresh endpoint coverage |
+| 26 | Repository aggregation compatibility | 7 passing | `node --test test/usageRepository.test.js` on 2026-03-13 10:33 Asia/Shanghai after validating decision-layer + alert-compatible snapshot logic |
+| 26 | Full verification | 42 passing | `npm test` on 2026-03-13 10:34 Asia/Shanghai after the T39 alert/explanation pass |
+| 27 | Alert-state persistence regression | 31 passing | `node --test test/dashboardView.test.js` on 2026-03-13 10:05 Asia/Shanghai after stabilizing recovered/disabled state transitions |
+| 27 | HTTP integration suite | 1 skipped | `node --test test/app.test.js` on 2026-03-13 10:05 Asia/Shanghai skipped due sandbox `listen EPERM` restriction on `127.0.0.1` binding |
+| 27 | Full verification | 43 passing, 1 skipped | `npm test` on 2026-03-13 10:05 Asia/Shanghai after Round4 hardening pass |
+| 27 | Production build | pass | `npm run build` on 2026-03-13 10:05 Asia/Shanghai |
+| 27 | Round3 dashboard regression | 30 passing | `node --test test/dashboardView.test.js` on 2026-03-13 10:40 Asia/Shanghai after quick preset/view toggle/favorite/export snapshot refinements |
+| 27 | Frontend build | pass | `npm run build:client` on 2026-03-13 10:40 Asia/Shanghai |
+| 27 | Full verification in sandbox | 43/44 passing | `npm test` on 2026-03-13 10:40 Asia/Shanghai; only `test/app.test.js` listener case fails with `listen EPERM 127.0.0.1` in this sandbox |
+| 28 | Round2 decision regression | 31 passing | `node --test test/dashboardView.test.js` on 2026-03-13 10:45 Asia/Shanghai after adding Round2 decision-section coverage |
+| 28 | Decision aggregation compatibility | 7 passing | `node --test test/usageRepository.test.js` on 2026-03-13 10:46 Asia/Shanghai after validating backend decision payload compatibility |
+| 28 | Frontend build | pass | `npm run build` on 2026-03-13 10:47 Asia/Shanghai |
+| 28 | Full verification in sandbox | 43/44 passing | `npm test` on 2026-03-13 10:44 Asia/Shanghai; only `test/app.test.js` listener case fails with `listen EPERM 127.0.0.1` in this sandbox |
+| 29 | Round1 homepage regression | 31 passing | `node --test test/dashboardView.test.js` on 2026-03-13 11:09 Asia/Shanghai after adding top info band/关键卡/异常角标/价格入口 assertions |
+| 29 | Full verification in sandbox | 43 passing, 1 skipped | `npm test` on 2026-03-13 11:10 Asia/Shanghai; `test/app.test.js` socket-bind case is skipped due sandbox `listen EPERM` |
+| 29 | Frontend build | pass | `npm run build` on 2026-03-13 11:11 Asia/Shanghai after Round1 homepage + pricing-route migration |
+| 30 | Homepage runtime regression | 33 passing | `node --test test/dashboardView.test.js` on 2026-03-13 13:10 Asia/Shanghai after adding runtime overview / ETA / accordion coverage |
+| 30 | Full verification | 46 passing | `npm test` on 2026-03-13 13:13 Asia/Shanghai after wiring homepage runtime overview, quota ETA copy, and live-session metadata |
+| 30 | Frontend build | pass | `npm run build` on 2026-03-13 13:14 Asia/Shanghai; emitted `public/index.html` plus hashed assets under `public/assets/` |
+| 31 | Homepage de-dup regression | 35 passing | `node --test test/dashboardView.test.js` on 2026-03-14 14:03 Asia/Shanghai after replacing duplicated `限制窗口` with `限额补充信息` and removing dead homepage overview code |
+| 31 | Full verification | 48 passing | `npm test` on 2026-03-14 14:04 Asia/Shanghai after the quota-section de-dup pass |
+| 31 | Frontend build | pass | `npm run build` on 2026-03-14 14:03 Asia/Shanghai; emitted new hashed assets under `public/assets/` |
+| 31 | Browser smoke | pass | Playwright snapshot on `http://127.0.0.1:4329/` confirmed first-screen compact cards remain visible while the lower section renders `限额补充信息` instead of duplicated quota cards |
+| 32 | Framework-refactor regression | 35 passing | `node --test test/dashboardView.test.js` on 2026-03-14 14:16 Asia/Shanghai after collapsing the Codex main panel into `运行概览 + 运营摘要 + Accordion` secondary detail groups |
+| 32 | Full verification | 48 passing | `npm test` on 2026-03-14 14:18 Asia/Shanghai after removing repeated top-level summary sections |
+| 32 | Frontend build | pass | `npm run build` on 2026-03-14 14:17 Asia/Shanghai; emitted new hashed assets under `public/assets/` |
+| 32 | Browser smoke | pass | Playwright browser snapshot on `http://127.0.0.1:4329/` confirmed the new compact header, persistent runtime overview, consolidated `运营摘要`, and accordion-based secondary detail triggers |
+| 33 | Dual-ledger regression | 36 passing | `node --test test/dashboardView.test.js` on 2026-03-14 14:36 Asia/Shanghai after introducing `我直接使用 Codex` / `小龙虾代用`, ledger-scoped workbench, and clickable running-session cards |
+| 33 | Full verification | 49 passing | `npm test` on 2026-03-14 14:40 Asia/Shanghai after the dual-ledger refactor pass |
+| 33 | Browser smoke | pass | Playwright browser snapshot on `http://127.0.0.1:4329/` confirmed the dual-ledger homepage, top-level session-detail entry, ledger-scoped workbench tabs, and collapsed advanced-detail triggers |

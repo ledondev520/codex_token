@@ -1,6 +1,6 @@
 # Codex Usage Dashboard Plan
 
-Last updated: 2026-03-13 08:14 Asia/Shanghai
+Last updated: 2026-03-14 14:41 Asia/Shanghai
 
 ## Goal
 
@@ -41,6 +41,17 @@ Build a standalone local web dashboard in this workspace that reads `~/.codex` u
 31. Fix table-column clipping in cost/pricing panels by hardening scroll + table layout strategy. Completed.
 32. Remove metric-card value ellipsis truncation and keep full-value readability in overview tiles. Completed.
 33. Optimize phone layout by preventing grid-level overflow, adding mobile session cards, and tightening responsive spacing. Completed.
+34. Add a minimal local password gate with remembered authorization and manual relock. Completed.
+35. Add configurable threshold alerts, trigger/recovery status, and metric-definition hover help without blocking the main dashboard flow. Completed.
+36. Complete Round3 interaction upgrades: quick date presets, one-click session view switching, favorite views, and snapshot export modes without breaking filter logic. Completed.
+37. Complete Round2 decision dashboard: top project/model cost rankings, efficiency indicators, and failure overview with graceful degradation. Completed.
+38. Complete Round1 homepage delivery: top info band, key cards, anomaly badge baseline, and move model pricing table to dedicated settings page while preserving minimal-invasive structure. Completed.
+39. Refactor homepage information density so runtime state, active sessions, today's spend, quota progress, ETA copy, and anomaly reason fit in the first screen. Completed.
+40. Document the fastest deployment and boss-acceptance flow for VPS port 18080. Completed.
+41. Tighten the homepage into a denser compact grid so first-screen essentials fit without oversized hero chrome. In progress.
+42. Remove duplicated quota-window rendering and turn the lower section into supplemental quota/session detail. Completed.
+43. Refactor the entire Codex dashboard framework so repeated summary sections collapse into one dense operations summary with accordion-based secondary details. Completed.
+44. Rebuild the Codex dashboard into a user-facing dual-ledger view aligned with the openclaw-control-center mental model. Completed.
 
 ## Architecture
 
@@ -59,6 +70,11 @@ Build a standalone local web dashboard in this workspace that reads `~/.codex` u
 - Session logs can be large, so parsing must be scoped to recent files and cached.
 - Live filesystem watching may behave differently across platforms; polling fallback is required.
 - External `codexbar` calls can fail or hang, so OpenClaw usage must not block the main Codex snapshot path.
+- The homepage now risks regressing into low-density hero sections if new summary widgets are added without first-screen budgeting.
+- Compacting the homepage too aggressively can hide session readability or push required data below the fold on shorter laptop screens.
+- Removing repeated quota cards from lower sections can hide detail users previously scanned there if the replacement does not preserve unique secondary information.
+- Folding secondary detail into accordions can reduce discoverability if trigger labels are vague or the default open/closed state is poorly chosen.
+- Splitting the homepage into two ledgers can still confuse users if detail dialogs, session tables, and advanced sections fall back to old internal source labels.
 
 ## Mitigations
 
@@ -70,10 +86,13 @@ Build a standalone local web dashboard in this workspace that reads `~/.codex` u
 - Cache OpenClaw usage reads and degrade to `null` when `codexbar` is unavailable so the rest of the dashboard stays live.
 - Keep the dashboard bound to loopback on the Mac and expose phone access through a reverse SSH tunnel terminated by the VPS reverse proxy.
 - Keep a clear record when public-access protections are relaxed so the exposure level is obvious on resume.
+- Keep the first-screen quota cards as the single source for used/remaining/ETA, and reserve lower sections for reset rhythm, session billing, and navigation-only details.
+- Keep accordion labels direct (`数据源`, `告警设置`, `成本排行`, `限额细节`) and reserve top-level sections only for always-on information.
+- Keep the two ledgers on one page with identical metric structure so “直接使用” and “小龙虾代用” remain comparable without requiring source switching.
 
 ## Current Phase
 
-- Dashboard refinement round is complete and verified.
+- Dashboard refinement round is complete, and the homepage runtime verification follow-up is verified.
 - The app now supports grouped pricing rows, top-level plan display, reset-progress feedback, tabbed recent sessions vs billing, hoverable combined chart, and runtime source-path switching.
 - Live rate-limit selection now keys off `rateLimitsAt`, avoiding stale 5-hour / 7-day values from later non-rate-limit token events.
 - Billing tab redesign is complete: dual-axis chart scaffolding, cumulative vs. natural-month switching, drag-adjustable time range, and a headed ledger table.
@@ -99,3 +118,16 @@ Build a standalone local web dashboard in this workspace that reads `~/.codex` u
 - Scroll-area tables now include horizontal scrollbar support and fixed column-width strategies, preventing rate/cost columns from being visually clipped in the current-session and pricing panels.
 - Overview metric tiles no longer force value ellipsis truncation; numeric values render fully while model labels continue to wrap when needed.
 - Phone-sized layouts now keep both Codex and OpenClaw views at `docScrollWidth = docClientWidth`, replace the mobile session table with stacked cards, and use tighter responsive spacing in the header and section chrome.
+- A local access gate now blocks the dashboard until the correct password is entered, remembers the current device with `localStorage`, and exposes a manual relock action without changing the existing snapshot/data flow.
+- Round 4 is complete: client-side threshold alerts now derive from existing snapshot data so no new blocking server path was introduced; today-cost and failure-rate alerts are configurable, recoverable, and explainable in-place.
+- Round 4 follow-up hardening is complete: recovered alert state now persists across subsequent low-value refreshes, and disabled alerts keep a stable transition timestamp instead of churning every snapshot.
+- Metric tiles now expose hoverable口径说明, alert settings persist in `localStorage`, and the server falls back to `index.html` plus `/api/refresh` for SPA compatibility with the newer route/test surface.
+- Round3 delivery is finalized: global quick date presets (`今日/昨日/7天/本月/自定义`) drive both session and billing slices, session view toggles are explicitly limited to `成本/性能/项目`, favorites are saved/applied as independent view presets, and exports now support both filtered CSV and current-view JSON snapshots.
+- Round2 decision delivery is now wired in the main Codex panel: top project/model cost rankings render for 今日/近7天, efficiency metrics show per-1k-token cost + cache hit rate + success rate, and failure overview exposes counts/latest failure/recent detail entry with empty-state fallbacks.
+- Round1 homepage delivery is complete: the homepage now has a dedicated top info band (source badges, latest update, freshness, refresh button/state), four key cards (今日花费/本月累计/预算进度/24h趋势), a baseline anomaly badge, and the model pricing table is served from standalone `/settings/pricing` with a homepage entry card.
+- The homepage runtime follow-up is complete: the first screen now exposes `运行状态`、`运行会话列表`、`今日费用`、`5小时限额`、`7天限额`，并在限额卡片上提供明确的 `估算触顶时间` 文案，同时保留原有的详细明细区块。
+- Deployment and acceptance docs now capture both the repo's current local-preview tunnel path and the shortest derived PM2-based VPS rollout path for `:18080`.
+- A follow-up homepage density pass is in progress to remove oversized first-screen headers/cards while preserving the current runtime/session/quota data model and actions.
+- The lower `限制窗口` section has been replaced by `限额补充信息`: duplicated 5h/7d usage cards were removed, reset-rhythm details were consolidated into one supplemental card, and dead homepage overview code was deleted.
+- The Codex main panel has now been fully regrouped into `运行概览 + 运营摘要 + 全部会话与账单`: repeated top-level sections were removed, while `数据源 / 告警设置 / 成本排行 / 限额细节` moved into shadcn `Accordion` detail groups.
+- The main panel has now been reoriented again around the openclaw-control-center mental model: two user-facing ledgers (`我直接使用 Codex` / `小龙虾代用`), a ledger-scoped `全部会话` workbench, and a default-collapsed `高级明细` area.

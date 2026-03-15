@@ -163,6 +163,16 @@ function createAppServer(options = {}) {
       return;
     }
 
+    if (request.method === "POST" && url.pathname === "/api/refresh") {
+      try {
+        const snapshot = await liveSnapshotService.refresh();
+        sendJson(response, 200, snapshot);
+      } catch (error) {
+        sendJson(response, 500, { error: error.message });
+      }
+      return;
+    }
+
     if (request.method === "POST" && url.pathname === "/api/source") {
       try {
         const payload = await readJsonBody(request);
@@ -177,7 +187,12 @@ function createAppServer(options = {}) {
       return;
     }
 
-    if (request.method === "GET" && (url.pathname === "/" || url.pathname === "/index.html")) {
+    if (
+      request.method === "GET" &&
+      (url.pathname === "/" ||
+        url.pathname === "/index.html" ||
+        url.pathname === "/settings/pricing")
+    ) {
       serveIndexHtml(
         response,
         path.join(publicDir, "index.html"),
@@ -186,20 +201,39 @@ function createAppServer(options = {}) {
       return;
     }
 
-    if (request.method === "HEAD" && (url.pathname === "/" || url.pathname === "/index.html")) {
+    if (
+      request.method === "HEAD" &&
+      (url.pathname === "/" ||
+        url.pathname === "/index.html" ||
+        url.pathname === "/settings/pricing")
+    ) {
       serveIndexHead(response, path.join(publicDir, "index.html"));
       return;
     }
 
     if (request.method === "GET") {
       const requestedPath = path.normalize(url.pathname).replace(/^(\.\.[/\\])+/, "");
-      serveStaticFile(response, path.join(publicDir, requestedPath));
+      if (path.extname(requestedPath)) {
+        serveStaticFile(response, path.join(publicDir, requestedPath));
+        return;
+      }
+
+      serveIndexHtml(
+        response,
+        path.join(publicDir, "index.html"),
+        liveSnapshotService.getCurrentSnapshot()
+      );
       return;
     }
 
     if (request.method === "HEAD") {
       const requestedPath = path.normalize(url.pathname).replace(/^(\.\.[/\\])+/, "");
-      serveStaticHead(response, path.join(publicDir, requestedPath));
+      if (path.extname(requestedPath)) {
+        serveStaticHead(response, path.join(publicDir, requestedPath));
+        return;
+      }
+
+      serveIndexHead(response, path.join(publicDir, "index.html"));
       return;
     }
 

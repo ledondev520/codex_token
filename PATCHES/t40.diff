@@ -1,0 +1,94 @@
+*** Round3 Patch Summary (T40)
+
+--- a/src/App.jsx
++++ b/src/App.jsx
+@@
+ const SESSION_VIEW_OPTIONS = [
+   { value: "cost", label: "成本视图" },
+   { value: "performance", label: "性能视图" },
+   { value: "project", label: "项目视图" },
+-  { value: "favorite", label: "收藏视图" },
+ ];
++
++const EXPORT_MODE_OPTIONS = [
++  { value: "csv", label: "导出 CSV（全部筛选结果）" },
++  { value: "view", label: "导出当前视图快照（JSON）" },
++];
+@@
++function triggerJsonDownload(filename, payload) {
++  const json = JSON.stringify(payload, null, 2);
++  // download blob as json file
++}
+@@
++const [exportMode, setExportMode] = useState("csv");
+@@
+-  setSessionView(favorite.sessionView || "cost");
++  const nextSessionView = SESSION_VIEW_OPTIONS.some((option) => option.value === favorite.sessionView)
++    ? favorite.sessionView
++    : "cost";
++  setSessionView(nextSessionView);
+@@
+-  const snapshotData = sessionsTab === "billing"
+-    ? buildBillingExportSnapshot(visibleLedgerRows)
+-    : buildSessionExportSnapshot(pageRows, sessionView);
++  const exportRows = sessionsTab === "billing"
++    ? exportMode === "csv" ? filteredScopeRows : visibleLedgerRows
++    : exportMode === "csv" ? filteredThreads : pageRows;
++  const snapshotData = sessionsTab === "billing"
++    ? buildBillingExportSnapshot(exportRows)
++    : buildSessionExportSnapshot(exportRows, sessionView);
+@@
++  if (exportMode === "view") {
++    triggerJsonDownload(`${filename}-snapshot.json`, {
++      exportedAt: snapshot.generatedAt,
++      sessionsTab,
++      sessionView,
++      billingScope,
++      datePreset,
++      activeDateRange,
++      filters: deferredFilters,
++      columns: snapshotData.columns,
++      rows: snapshotData.rows,
++    });
++    return;
++  }
+@@
+-<Button type="button" onClick={handleExportCurrentView}>导出当前视图</Button>
++<Select value={exportMode} onValueChange={(value) => setExportMode(value)}>
++  <SelectItem value="csv">导出 CSV（全部筛选结果）</SelectItem>
++  <SelectItem value="view">导出当前视图快照（JSON）</SelectItem>
++</Select>
++<Button type="button" onClick={handleExportCurrentView}>
++  {exportMode === "csv" ? "导出 CSV" : "导出当前视图"}
++</Button>
+
+--- a/test/dashboardView.test.js
++++ b/test/dashboardView.test.js
+@@
+ assert.match(appSource, /导出 CSV（全部筛选结果）/);
+ assert.match(appSource, /导出当前视图快照（JSON）/);
+ assert.doesNotMatch(appSource, /\{ value: "favorite", label: "收藏视图" \}/);
+@@
+-test("round1 homepage keeps top info band, key cards, anomaly badge, and pricing entry", () => {
++test("homepage keeps key summary, alert, pricing, and refresh-status surfaces", () => {
+   // synced stale copy assertions with current homepage wording
+ });
+
+--- a/PLAN.md
++++ b/PLAN.md
+@@
++36. Complete Round3 interaction upgrades ... Completed.
+@@
++- Round3 delivery is finalized ... CSV + current-view JSON snapshot.
+
+--- a/TASKS.md
++++ b/TASKS.md
+@@
++| T40 | ... | DONE | Round3: 快速筛选预设 + 一键视图切换 + 收藏视图 + 导出快照 | ... |
+
+--- a/METRICS.md
++++ b/METRICS.md
+@@
++| 27 | Round3 dashboard regression | 30 passing | node --test test/dashboardView.test.js |
++| 27 | Frontend build | pass | npm run build:client |
++| 27 | Full verification in sandbox | 43/44 passing | npm test (EPERM listener limitation) |

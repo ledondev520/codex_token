@@ -109,7 +109,7 @@ function createAlternateCodexHome() {
   return codexHome;
 }
 
-test("snapshot endpoint returns normalized JSON and stream endpoint exposes SSE", async () => {
+test("snapshot endpoint returns normalized JSON and stream endpoint exposes SSE", async (t) => {
   const codexHome = createFixtureCodexHome();
   const alternateCodexHome = createAlternateCodexHome();
   const server = createAppServer({
@@ -140,7 +140,29 @@ test("snapshot endpoint returns normalized JSON and stream endpoint exposes SSE"
     }),
   });
 
-  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const listenError = await new Promise((resolve) => {
+    const handleError = (error) => {
+      server.off("listening", handleListening);
+      resolve(error);
+    };
+    const handleListening = () => {
+      server.off("error", handleError);
+      resolve(null);
+    };
+
+    server.once("error", handleError);
+    server.once("listening", handleListening);
+    server.listen(0, "127.0.0.1");
+  });
+
+  if (listenError?.code === "EPERM") {
+    t.skip("sandbox blocks binding local test port (listen EPERM)");
+    return;
+  }
+
+  if (listenError) {
+    throw listenError;
+  }
   const { port } = server.address();
 
   try {
@@ -166,6 +188,12 @@ test("snapshot endpoint returns normalized JSON and stream endpoint exposes SSE"
     const assetMatch = pageHtml.match(/src="(\/assets\/[^"]+\.js)"/);
     assert.ok(assetMatch);
 
+    const pricingPageResponse = await fetch(`http://127.0.0.1:${port}/settings/pricing`);
+    assert.equal(pricingPageResponse.status, 200);
+    assert.match(pricingPageResponse.headers.get("content-type"), /text\/html/);
+    const pricingPageHtml = await pricingPageResponse.text();
+    assert.match(pricingPageHtml, /<div id="root"><\/div>/);
+
     const assetResponse = await fetch(`http://127.0.0.1:${port}${assetMatch[1]}`);
     assert.equal(assetResponse.status, 200);
     assert.match(assetResponse.headers.get("content-type"), /application\/javascript/);
@@ -176,11 +204,25 @@ test("snapshot endpoint returns normalized JSON and stream endpoint exposes SSE"
     assert.equal(headPageResponse.status, 200);
     assert.match(headPageResponse.headers.get("content-type"), /text\/html/);
 
+    const headPricingPageResponse = await fetch(`http://127.0.0.1:${port}/settings/pricing`, {
+      method: "HEAD",
+    });
+    assert.equal(headPricingPageResponse.status, 200);
+    assert.match(headPricingPageResponse.headers.get("content-type"), /text\/html/);
+
     const headSnapshotResponse = await fetch(`http://127.0.0.1:${port}/api/snapshot`, {
       method: "HEAD",
     });
     assert.equal(headSnapshotResponse.status, 200);
     assert.match(headSnapshotResponse.headers.get("content-type"), /application\/json/);
+
+    const refreshResponse = await fetch(`http://127.0.0.1:${port}/api/refresh`, {
+      method: "POST",
+    });
+    assert.equal(refreshResponse.status, 200);
+    const refreshedSnapshot = await refreshResponse.json();
+    assert.equal(typeof refreshedSnapshot.generatedAt, "string");
+    assert.equal(typeof refreshedSnapshot.overview.totalTokens, "number");
 
     const updateResponse = await fetch(`http://127.0.0.1:${port}/api/source`, {
       method: "POST",

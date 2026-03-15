@@ -20,12 +20,7 @@ export default defineConfig({
           if (id.includes("recharts")) {
             return "recharts";
           }
-
-          if (id.includes("react-day-picker") || id.includes("@radix-ui/react-popover")) {
-            return "calendar";
-          }
-
-          if (id.includes("@radix-ui")) {
+          if (id.includes("@radix-ui") || id.includes("react-day-picker")) {
             return "radix";
           }
         },

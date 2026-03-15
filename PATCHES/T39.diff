@@ -1,0 +1,3341 @@
+diff --git a/PLAN.md b/PLAN.md
+index 3628bd5..cd77b1e 100644
+--- a/PLAN.md
++++ b/PLAN.md
+@@ -1,6 +1,6 @@
+ # Codex Usage Dashboard Plan
+ 
+-Last updated: 2026-03-13 08:14 Asia/Shanghai
++Last updated: 2026-03-13 10:55 Asia/Shanghai
+ 
+ ## Goal
+ 
+@@ -41,6 +41,10 @@ Build a standalone local web dashboard in this workspace that reads `~/.codex` u
+ 31. Fix table-column clipping in cost/pricing panels by hardening scroll + table layout strategy. Completed.
+ 32. Remove metric-card value ellipsis truncation and keep full-value readability in overview tiles. Completed.
+ 33. Optimize phone layout by preventing grid-level overflow, adding mobile session cards, and tightening responsive spacing. Completed.
++34. Add a minimal local password gate with remembered authorization and manual relock. Completed.
++35. Add configurable threshold alerts, trigger/recovery status, and metric-definition hover help without blocking the main dashboard flow. Completed.
++36. Complete Round3 interaction upgrades: quick date presets, one-click session view switching, favorite views, and snapshot export modes without breaking filter logic. Completed.
++37. Complete Round2 decision dashboard: top project/model cost rankings, efficiency indicators, and failure overview with graceful degradation. Completed.
+ 
+ ## Architecture
+ 
+@@ -73,7 +77,7 @@ Build a standalone local web dashboard in this workspace that reads `~/.codex` u
+ 
+ ## Current Phase
+ 
+-- Dashboard refinement round is complete and verified.
++- Dashboard refinement round is complete and round 4 alerting/explanation work is verified.
+ - The app now supports grouped pricing rows, top-level plan display, reset-progress feedback, tabbed recent sessions vs billing, hoverable combined chart, and runtime source-path switching.
+ - Live rate-limit selection now keys off `rateLimitsAt`, avoiding stale 5-hour / 7-day values from later non-rate-limit token events.
+ - Billing tab redesign is complete: dual-axis chart scaffolding, cumulative vs. natural-month switching, drag-adjustable time range, and a headed ledger table.
+@@ -99,3 +103,9 @@ Build a standalone local web dashboard in this workspace that reads `~/.codex` u
+ - Scroll-area tables now include horizontal scrollbar support and fixed column-width strategies, preventing rate/cost columns from being visually clipped in the current-session and pricing panels.
+ - Overview metric tiles no longer force value ellipsis truncation; numeric values render fully while model labels continue to wrap when needed.
+ - Phone-sized layouts now keep both Codex and OpenClaw views at `docScrollWidth = docClientWidth`, replace the mobile session table with stacked cards, and use tighter responsive spacing in the header and section chrome.
++- A local access gate now blocks the dashboard until the correct password is entered, remembers the current device with `localStorage`, and exposes a manual relock action without changing the existing snapshot/data flow.
++- Round 4 is complete: client-side threshold alerts now derive from existing snapshot data so no new blocking server path was introduced; today-cost and failure-rate alerts are configurable, recoverable, and explainable in-place.
++- Round 4 follow-up hardening is complete: recovered alert state now persists across subsequent low-value refreshes, and disabled alerts keep a stable transition timestamp instead of churning every snapshot.
++- Metric tiles now expose hoverable口径说明, alert settings persist in `localStorage`, and the server falls back to `index.html` plus `/api/refresh` for SPA compatibility with the newer route/test surface.
++- Round3 delivery is finalized: global quick date presets (`今日/昨日/7天/本月/自定义`) drive both session and billing slices, session view toggles are explicitly limited to `成本/性能/项目`, favorites are saved/applied as independent view presets, and exports now support both filtered CSV and current-view JSON snapshots.
++- Round2 decision delivery is now wired in the main Codex panel: top project/model cost rankings render for 今日/近7天, efficiency metrics show per-1k-token cost + cache hit rate + success rate, and failure overview exposes counts/latest failure/recent detail entry with empty-state fallbacks.
+diff --git a/TASKS.md b/TASKS.md
+index 998a565..8b3c8e6 100644
+--- a/TASKS.md
++++ b/TASKS.md
+@@ -1,6 +1,6 @@
+ # Tasks
+ 
+-Last updated: 2026-03-13 08:14 Asia/Shanghai
++Last updated: 2026-03-13 10:55 Asia/Shanghai
+ 
+ | ID | Priority | Est | Slot | Status | Task | Input | Output | Validation | DoD |
+ | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+@@ -41,3 +41,7 @@ Last updated: 2026-03-13 08:14 Asia/Shanghai
+ | T35 | P1 | 10m | 1 | DONE | Fix table column clipping in billing/cost/pricing panels | overflow screenshot feedback from user | horizontal `ScrollArea` scrollbar + fixed table layout/column width/nowrap + safer cell wrapping | `npm test` | right-side rate/cost columns stay visible and readable instead of being clipped at card boundaries |
+ | T36 | P1 | 5m | 1 | DONE | Remove metric-value ellipsis truncation so overview values stay fully readable | user screenshot feedback on truncated metric tiles | metric value typography without `text-ellipsis` truncation, model tile still wraps | `npm test` | top-overview metrics display full values (no `...`) while preserving card boundaries |
+ | T37 | P0 | 20m | 1 | DONE | Optimize mobile responsiveness across the dashboard shell and session browsing | current React dashboard mobile layout | grid/card shrink guards, tighter responsive header/section spacing, mobile session cards, phone-safe 3-column tables, checkpoint docs/results/log/patch | `npm test` and Playwright mobile overflow checks on `http://127.0.0.1:4329/` | `390px` viewport shows no page-level horizontal overflow for Codex or OpenClaw views, and `全部会话` is readable on phone without dragging a 10-column table |
++| T38 | P0 | 15m | 1 | DONE | Add a minimal local password gate with remembered authorization and manual relock | existing React dashboard shell | password gate in `App.jsx`, localStorage persistence, relock control, regression test, checkpoint docs/results/log/patch | `node --test test/dashboardView.test.js` and `npm test` | first visit requires password `970520`, same device is remembered, manual relock clears authorization, and existing dashboard flows remain intact |
++| T39 | P0 | 20m | 1 | DONE | Add configurable threshold alerts, trigger/recovery status, and metric-definition hover help | existing React dashboard + snapshot-derived metrics | local alert config, non-blocking alert cards, trigger/recovery state memory, metric hover help, regression tests, checkpoint docs/results/log/patch | `node --test test/dashboardView.test.js`, `node --test test/app.test.js`, `node --test test/usageRepository.test.js`, `npm test` | daily spend and failure-rate alerts can be tuned or disabled without blocking the dashboard, recovered state remains visible after thresholds clear, disabled-state timestamp is stable, SPA deep links keep working, and key metrics expose hover explanations |
++| T40 | P0 | 20m | 1 | DONE | Round3: 快速筛选预设 + 一键视图切换 + 收藏视图 + 导出快照 | existing React dashboard session/billing interaction layer | date preset toolbar, cost/performance/project quick switch, favorite view compatibility hardening, CSV + current-view snapshot export modes, regression assertion updates, checkpoint docs/results/log/patch | `node --test test/dashboardView.test.js`, `npm run build:client`, `npm test` | Round3 interactions are wired to existing filter pipeline without changing filtering semantics; dashboardView regression passes; build succeeds; full suite only keeps sandbox EPERM listener failure in `test/app.test.js` |
++| T41 | P0 | 20m | 1 | DONE | Round2: Top 项目/模型成本排行 + 单位效率指标 + 失败任务概览 | existing decision snapshot payload + React dashboard layout | Round2 decision section in `App.jsx`, failure-detail entry wiring, graceful empty-state degradation, regression assertion updates, checkpoint docs/results/log/patch | `node --test test/dashboardView.test.js`, `node --test test/usageRepository.test.js`, `npm run build`, `npm test` | Round2 decision cards render 今日/7天 project+model rankings, efficiency metrics, and failure summary/detail actions without breaking existing views; build passes; full suite only keeps sandbox EPERM listener failure in `test/app.test.js` |
+diff --git a/src/App.jsx b/src/App.jsx
+index 1ce5a93..5662149 100644
+--- a/src/App.jsx
++++ b/src/App.jsx
+@@ -1,9 +1,10 @@
+-import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
++import { useDeferredValue, useEffect, useMemo, useState } from "react";
+ 
+ import { Badge } from "./components/ui/badge.jsx";
+ import { Button } from "./components/ui/button.jsx";
+ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "./components/ui/card.jsx";
+ import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "./components/ui/accordion.jsx";
++import { Alert, AlertDescription } from "./components/ui/alert.jsx";
+ import {
+   Dialog,
+   DialogContent,
+@@ -34,6 +35,7 @@ import { EmptyState } from "./components/dashboard/empty-state.jsx";
+ import { PageHeader } from "./components/dashboard/page-header.jsx";
+ import { SectionCard } from "./components/dashboard/section-card.jsx";
+ import { cn } from "./lib/utils.js";
++import { CircleHelp } from "lucide-react";
+ import {
+   Area,
+   AreaChart,
+@@ -45,7 +47,14 @@ import {
+   YAxis,
+ } from "recharts";
+ import {
++  ALERT_CONFIG_LIMITS,
++  buildBillingExportSnapshot,
++  buildSessionExportSnapshot,
+   calculateResetProgress,
++  detectCostSpikes,
++  evaluateAlertStates,
++  filterRowsByDayRange,
++  formatRelativeTime,
+   formatModelLabel,
+   formatPercent,
+   formatPlanName,
+@@ -56,17 +65,52 @@ import {
+   formatUsageSource,
+   formatUsd,
+   getBillableInputTokens,
++  getAlertMetrics,
++  getDatePresetRange,
+   getFilteredSessionRows,
++  getHomepageSummary,
+   getScopeRows,
+   getSessionPageCount,
+   getSessionPageRows,
+   getVisibleLedgerRows,
+   isRateLimitSnapshotStale,
++  normalizeAlertConfig,
+   normalizeInlineText,
++  stringifyCsvSnapshot,
+   summarizeLedgerRows,
+   summarizePromptText,
+ } from "./lib/dashboard-logic.mjs";
+ 
++const ACCESS_PASSWORD = "970520";
++const ACCESS_STORAGE_KEY = "codex-dashboard-access-granted";
++const FAVORITE_VIEWS_STORAGE_KEY = "codex-dashboard-favorite-views";
++const ALERT_CONFIG_STORAGE_KEY = "codex-dashboard-alert-config";
++const ALERT_STATE_STORAGE_KEY = "codex-dashboard-alert-state";
++
++const DATE_PRESET_OPTIONS = [
++  { value: "today", label: "今日" },
++  { value: "yesterday", label: "昨日" },
++  { value: "last7", label: "7天" },
++  { value: "month", label: "本月" },
++  { value: "custom", label: "自定义" },
++];
++
++const SESSION_VIEW_OPTIONS = [
++  { value: "cost", label: "成本视图" },
++  { value: "performance", label: "性能视图" },
++  { value: "project", label: "项目视图" },
++];
++
++const EXPORT_MODE_OPTIONS = [
++  { value: "csv", label: "导出 CSV（全部筛选结果）" },
++  { value: "view", label: "导出当前视图快照（JSON）" },
++];
++
++const APP_ROUTES = {
++  home: "/",
++  pricing: "/settings/pricing",
++};
++
+ const INITIAL_SNAPSHOT =
+   typeof window !== "undefined" && window.__INITIAL_SNAPSHOT__
+     ? window.__INITIAL_SNAPSHOT__
+@@ -82,6 +126,54 @@ const EMPTY_SNAPSHOT = {
+     totalTokens: 0,
+     totalEstimatedCost: 0,
+   },
++  decision: {
++    projectCost: {
++      today: [],
++      last7Days: [],
++      note: "",
++    },
++    modelCost: {
++      today: [],
++      last7Days: [],
++      note: "",
++    },
++    efficiency: {
++      today: {
++        totalUsd: 0,
++        totalTokens: 0,
++        inputTokens: 0,
++        cachedInputTokens: 0,
++        successCount: 0,
++        failureCount: 0,
++        terminalCount: 0,
++        costPer1kTokens: null,
++        cacheHitRate: null,
++        successRate: null,
++      },
++      last7Days: {
++        totalUsd: 0,
++        totalTokens: 0,
++        inputTokens: 0,
++        cachedInputTokens: 0,
++        successCount: 0,
++        failureCount: 0,
++        terminalCount: 0,
++        costPer1kTokens: null,
++        cacheHitRate: null,
++        successRate: null,
++      },
++      costPer1kNote: "",
++      cacheHitRateNote: "",
++      successRateNote: "",
++    },
++    failures: {
++      todayCount: 0,
++      last7DaysCount: 0,
++      latestFailedAt: null,
++      recent: [],
++      note: "",
++    },
++  },
+   openclaw: null,
+   live: {
+     currentSession: null,
+@@ -224,6 +316,483 @@ function formatDateValue(date) {
+   return `${year}-${month}-${day}`;
+ }
+ 
++function formatDateRangeLabel(range) {
++  if (!range?.startDay && !range?.endDay) {
++    return "全部时间";
++  }
++
++  if (range?.startDay && range?.endDay) {
++    return `${range.startDay} -> ${range.endDay}`;
++  }
++
++  return range?.startDay || range?.endDay || "全部时间";
++}
++
++function readAccessState() {
++  if (typeof window === "undefined") {
++    return false;
++  }
++
++  try {
++    return window.localStorage.getItem(ACCESS_STORAGE_KEY) === "true";
++  } catch {
++    return false;
++  }
++}
++
++function readJsonStorage(key, fallback) {
++  if (typeof window === "undefined") {
++    return fallback;
++  }
++
++  try {
++    const rawValue = window.localStorage.getItem(key);
++    return rawValue ? JSON.parse(rawValue) : fallback;
++  } catch {
++    return fallback;
++  }
++}
++
++function writeJsonStorage(key, value) {
++  if (typeof window === "undefined") {
++    return;
++  }
++
++  try {
++    window.localStorage.setItem(key, JSON.stringify(value));
++  } catch {
++    // Ignore storage failures and keep local controls usable for the current page load.
++  }
++}
++
++function persistAccessState(granted) {
++  if (typeof window === "undefined") {
++    return;
++  }
++
++  try {
++    if (granted) {
++      window.localStorage.setItem(ACCESS_STORAGE_KEY, "true");
++      return;
++    }
++
++    window.localStorage.removeItem(ACCESS_STORAGE_KEY);
++  } catch {
++    // Ignore storage failures and keep the gate usable for the current page load.
++  }
++}
++
++function readAlertConfig() {
++  return normalizeAlertConfig(readJsonStorage(ALERT_CONFIG_STORAGE_KEY, {}));
++}
++
++function persistAlertConfig(config) {
++  writeJsonStorage(ALERT_CONFIG_STORAGE_KEY, normalizeAlertConfig(config));
++}
++
++function readAlertStates() {
++  return readJsonStorage(ALERT_STATE_STORAGE_KEY, {});
++}
++
++function persistAlertStates(states) {
++  writeJsonStorage(ALERT_STATE_STORAGE_KEY, states);
++}
++
++function readFavoriteViews() {
++  const stored = readJsonStorage(FAVORITE_VIEWS_STORAGE_KEY, []);
++  return Array.isArray(stored) ? stored : [];
++}
++
++function persistFavoriteViews(favorites) {
++  writeJsonStorage(FAVORITE_VIEWS_STORAGE_KEY, favorites);
++}
++
++function alertPhaseBadgeVariant(phase) {
++  if (phase === "triggered") {
++    return "danger";
++  }
++
++  if (phase === "recovered") {
++    return "success";
++  }
++
++  if (phase === "disabled") {
++    return "secondary";
++  }
++
++  return "info";
++}
++
++function alertPhaseLabel(phase) {
++  if (phase === "triggered") {
++    return "触发中";
++  }
++
++  if (phase === "recovered") {
++    return "已恢复";
++  }
++
++  if (phase === "disabled") {
++    return "已关闭";
++  }
++
++  return "正常";
++}
++
++function formatAlertTimestamp(value) {
++  if (!value) {
++    return "暂无变化";
++  }
++
++  return new Date(value).toLocaleString("zh-CN");
++}
++
++function readCurrentPage() {
++  if (typeof window === "undefined") {
++    return "home";
++  }
++
++  return window.location.pathname === APP_ROUTES.pricing ? "pricing" : "home";
++}
++
++function refreshStatusVariant(status) {
++  if (status === "success") {
++    return "success";
++  }
++
++  if (status === "error") {
++    return "danger";
++  }
++
++  if (status === "loading") {
++    return "warning";
++  }
++
++  return "secondary";
++}
++
++function refreshStatusLabel(status) {
++  if (status === "success") {
++    return "刷新成功";
++  }
++
++  if (status === "error") {
++    return "刷新失败";
++  }
++
++  if (status === "loading") {
++    return "刷新进行中";
++  }
++
++  return "等待刷新";
++}
++
++function resolveFreshnessState(generatedAt, now = Date.now()) {
++  const generatedAtMs = new Date(generatedAt || 0).getTime();
++  const nowMs = new Date(now).getTime();
++
++  if (!Number.isFinite(generatedAtMs) || !Number.isFinite(nowMs)) {
++    return { label: "未知", variant: "secondary" };
++  }
++
++  const ageMinutes = Math.max(0, (nowMs - generatedAtMs) / 60000);
++  if (ageMinutes <= 2) {
++    return { label: "新鲜", variant: "success" };
++  }
++
++  if (ageMinutes <= 10) {
++    return { label: "正常", variant: "info" };
++  }
++
++  if (ageMinutes <= 30) {
++    return { label: "延迟", variant: "warning" };
++  }
++
++  return { label: "陈旧", variant: "danger" };
++}
++
++function triggerCsvDownload(filename, csv) {
++  if (typeof window === "undefined" || typeof document === "undefined") {
++    return false;
++  }
++
++  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
++  const objectUrl = window.URL.createObjectURL(blob);
++  const anchor = document.createElement("a");
++  anchor.href = objectUrl;
++  anchor.download = filename;
++  document.body.append(anchor);
++  anchor.click();
++  anchor.remove();
++  window.URL.revokeObjectURL(objectUrl);
++  return true;
++}
++
++function triggerJsonDownload(filename, payload) {
++  if (typeof window === "undefined" || typeof document === "undefined") {
++    return false;
++  }
++
++  const json = JSON.stringify(payload, null, 2);
++  const blob = new Blob([json], { type: "application/json;charset=utf-8;" });
++  const objectUrl = window.URL.createObjectURL(blob);
++  const anchor = document.createElement("a");
++  anchor.href = objectUrl;
++  anchor.download = filename;
++  document.body.append(anchor);
++  anchor.click();
++  anchor.remove();
++  window.URL.revokeObjectURL(objectUrl);
++  return true;
++}
++
++function formatUsdPerThousandTokens(value) {
++  if (value === null || value === undefined) {
++    return "-";
++  }
++
++  const numeric = Number(value);
++  if (!Number.isFinite(numeric)) {
++    return "-";
++  }
++
++  if (Math.abs(numeric) >= 1) {
++    return `$${numeric.toFixed(2)}`;
++  }
++
++  if (Math.abs(numeric) >= 0.01) {
++    return `$${numeric.toFixed(3)}`;
++  }
++
++  return `$${numeric.toFixed(4)}`;
++}
++
++function formatDecisionPercent(value) {
++  if (value === null || value === undefined) {
++    return "-";
++  }
++
++  const numeric = Number(value);
++  if (!Number.isFinite(numeric)) {
++    return "-";
++  }
++
++  return `${numeric.toFixed(1).replace(/\.0$/, "")}%`;
++}
++
++function formatSignedUsd(value) {
++  const numeric = Number(value || 0);
++  if (!numeric) {
++    return "$0.00";
++  }
++
++  return `${numeric > 0 ? "+" : "-"}$${Math.abs(numeric).toFixed(2)}`;
++}
++
++function formatSignedTokenMillions(value) {
++  const numeric = Number(value || 0);
++  if (!numeric) {
++    return "0M";
++  }
++
++  return `${numeric > 0 ? "+" : "-"}${formatTokenMillions(Math.abs(numeric))}`;
++}
++
++function trendTone(direction) {
++  if (direction === "up") {
++    return "danger";
++  }
++
++  if (direction === "down") {
++    return "success";
++  }
++
++  return "secondary";
++}
++
++function HomepageTopInfoBand({
++  snapshot,
++  refreshStatus,
++  refreshMessage,
++  anomalyCount,
++  onRefreshSnapshot,
++  onOpenPricing,
++}) {
++  const freshness = resolveFreshnessState(snapshot.generatedAt);
++  const refreshing = refreshStatus === "loading";
++  const sourceLabels = ["Codex 本地"];
++  if (snapshot.openclaw) {
++    sourceLabels.push("OpenClaw / OAuth");
++  }
++
++  return (
++    <SectionCard
++      title="顶部信息带"
++      description="数据源徽标、最近更新时间、新鲜度、刷新按钮与状态"
++      actions={
++        <div className="flex flex-wrap items-center gap-2 sm:justify-end">
++          <Badge variant={refreshStatusVariant(refreshStatus)}>刷新状态 {refreshStatusLabel(refreshStatus)}</Badge>
++          <Button type="button" size="sm" onClick={onRefreshSnapshot} disabled={refreshing}>
++            {refreshing ? "刷新中..." : "刷新数据"}
++          </Button>
++        </div>
++      }
++    >
++      <div className="grid gap-4 lg:grid-cols-[minmax(0,1.15fr)_minmax(300px,0.85fr)]">
++        <div className="space-y-3">
++          <div className="flex flex-wrap gap-2">
++            {sourceLabels.map((label) => (
++              <Badge key={label} variant={label.includes("OpenClaw") ? "teal" : "info"}>{label}</Badge>
++            ))}
++            <Badge variant={freshness.variant}>新鲜度 {freshness.label}</Badge>
++            <Badge variant={anomalyCount ? "danger" : "secondary"}>异常角标 {anomalyCount}</Badge>
++          </div>
++          <div className="text-sm text-muted-foreground">
++            最近更新时间 {new Date(snapshot.generatedAt).toLocaleString("zh-CN")} ·{" "}
++            {formatRelativeTime(snapshot.generatedAt)}
++          </div>
++          {refreshMessage ? <div className="text-sm text-muted-foreground">{refreshMessage}</div> : null}
++        </div>
++        <Card className="rounded-xl bg-muted/40 shadow-none">
++          <CardContent className="space-y-3 p-4">
++            <Label>模型价格</Label>
++            <p className="text-sm text-muted-foreground">模型价格表已迁移到设置页，首页仅保留入口。</p>
++            <div className="flex flex-wrap items-center gap-2">
++              <Badge variant="secondary">共 {formatTokenRaw(snapshot.pricingCatalog?.length || 0)} 条</Badge>
++              <Button type="button" size="sm" variant="outline" onClick={onOpenPricing}>
++                进入 设置/模型价格
++              </Button>
++            </div>
++          </CardContent>
++        </Card>
++      </div>
++    </SectionCard>
++  );
++}
++
++function HomepageKeyCards({ summary, dailyBudgetUsd }) {
++  const budgetLimit = Number(dailyBudgetUsd || 0);
++  const budgetProgress = budgetLimit > 0 ? Math.min(100, (summary.today.totalUsd / budgetLimit) * 100) : 0;
++  const budgetVariant = budgetLimit > 0 && summary.today.totalUsd > budgetLimit ? "danger" : "info";
++
++  return (
++    <SectionCard title="首页关键卡片" description="今日花费 / 本月累计 / 预算进度 / 24h趋势">
++      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
++        <MetricTile
++          label="今日花费"
++          value={formatUsd(summary.today.totalUsd)}
++          subvalue={`Token ${formatTokenMillions(summary.today.totalTokens)}`}
++          compact
++          tone="muted"
++        />
++        <MetricTile
++          label="本月累计"
++          value={formatUsd(summary.month.totalUsd)}
++          subvalue={`Token ${formatTokenMillions(summary.month.totalTokens)}`}
++          compact
++        />
++        <Card className="rounded-xl shadow-none">
++          <CardContent className="space-y-3 p-4">
++            <div className="flex items-center justify-between gap-3">
++              <Label>预算进度</Label>
++              <Badge variant={budgetVariant}>
++                {budgetLimit > 0 ? `${Math.min(999, Math.round((summary.today.totalUsd / budgetLimit) * 100))}%` : "未设置"}
++              </Badge>
++            </div>
++            <Progress
++              value={budgetProgress}
++              indicatorClassName={budgetLimit > 0 && summary.today.totalUsd > budgetLimit ? "bg-rose-500" : "bg-primary"}
++            />
++            <div className="text-sm text-muted-foreground">
++              {budgetLimit > 0
++                ? `${formatUsd(summary.today.totalUsd)} / ${formatUsd(budgetLimit)}（按日阈值）`
++                : "请在告警设置中配置日花费阈值以启用预算进度。"}
++            </div>
++          </CardContent>
++        </Card>
++        <Card className="rounded-xl shadow-none">
++          <CardContent className="space-y-3 p-4">
++            <div className="flex items-center justify-between gap-3">
++              <Label>24h趋势</Label>
++              <Badge variant={trendTone(summary.change.direction)}>
++                {summary.change.direction === "up"
++                  ? "上升"
++                  : summary.change.direction === "down"
++                    ? "下降"
++                    : "持平"}
++              </Badge>
++            </div>
++            <div className="mono text-[1.72rem] leading-none tracking-[-0.04em]">
++              {formatSignedUsd(summary.change.deltaUsd)}
++            </div>
++            <div className="text-sm text-muted-foreground">
++              对比昨日 Token {formatSignedTokenMillions(summary.change.deltaTokens)}
++            </div>
++          </CardContent>
++        </Card>
++      </div>
++    </SectionCard>
++  );
++}
++
++function MetricHint({ title, children }) {
++  return (
++    <Popover>
++      <PopoverTrigger asChild>
++        <button
++          type="button"
++          className="inline-flex h-4 w-4 items-center justify-center rounded-full text-muted-foreground transition-colors hover:text-foreground"
++          aria-label={`${title}口径说明`}
++        >
++          <CircleHelp className="h-3.5 w-3.5" />
++        </button>
++      </PopoverTrigger>
++      <PopoverContent side="top" align="start" className="w-80 text-xs leading-6">
++        <div className="font-semibold text-foreground">口径说明</div>
++        <div className="mt-1 text-muted-foreground">{children}</div>
++      </PopoverContent>
++    </Popover>
++  );
++}
++
++function AccessGate({ password, errorMessage, onPasswordChange, onSubmit }) {
++  return (
++    <div className="mx-auto flex min-h-screen max-w-[1520px] items-center justify-center px-4 py-8">
++      <Card className="w-full max-w-md rounded-2xl border shadow-sm">
++        <CardHeader className="space-y-3">
++          <div className="text-[11px] font-semibold uppercase tracking-[0.24em] text-muted-foreground">
++            Codex Local Usage Dashboard
++          </div>
++          <CardTitle className="text-2xl tracking-[-0.04em]">输入访问密码</CardTitle>
++          <CardDescription>
++            首次访问需要验证密码。当前设备验证一次后会自动记住，直到你手动重新锁定。
++          </CardDescription>
++        </CardHeader>
++        <CardContent>
++          <form className="space-y-4" onSubmit={onSubmit}>
++            <div className="space-y-2">
++              <Label htmlFor="access-password">访问密码</Label>
++              <Input
++                id="access-password"
++                type="password"
++                autoComplete="current-password"
++                inputMode="numeric"
++                placeholder="请输入 6 位访问密码"
++                value={password}
++                onChange={(event) => onPasswordChange(event.target.value)}
++              />
++            </div>
++            {errorMessage ? (
++              <p className="text-sm font-medium text-destructive">{errorMessage}</p>
++            ) : null}
++            <Button className="w-full" type="submit">进入页面</Button>
++          </form>
++        </CardContent>
++      </Card>
++    </div>
++  );
++}
++
+ function CostBreakdownTable({ currentSession }) {
+   const cost = currentSession?.cost;
+ 
+@@ -490,14 +1059,375 @@ function BillingChart({ rows }) {
+             </AreaChart>
+           </ResponsiveContainer>
+         </div>
+-      ) : chartRows.length === 1 ? (
+-        <EmptyState>
+-          当前范围仅包含 {chartRows[0].day} 这一天，走势图已隐藏，请直接查看下方账单明细表。
+-        </EmptyState>
+-      ) : (
+-        <EmptyState>没有每日账单数据。</EmptyState>
+-      )}
+-    </div>
++      ) : chartRows.length === 1 ? (
++        <EmptyState>
++          当前范围仅包含 {chartRows[0].day} 这一天，走势图已隐藏，请直接查看下方账单明细表。
++        </EmptyState>
++      ) : (
++        <EmptyState>没有每日账单数据。</EmptyState>
++      )}
++    </div>
++  );
++}
++
++function AlertStatusCard({
++  title,
++  tooltip,
++  state,
++  value,
++  thresholdLabel,
++  detail,
++  changeLabel,
++}) {
++  return (
++    <Card className="rounded-xl shadow-none">
++      <CardContent className="space-y-4 p-4">
++        <div className="flex items-start justify-between gap-3">
++          <div className="flex items-center gap-2">
++            <span className="font-medium">{title}</span>
++            <MetricHint title={title}>{tooltip}</MetricHint>
++          </div>
++          <Badge variant={alertPhaseBadgeVariant(state.phase)}>{alertPhaseLabel(state.phase)}</Badge>
++        </div>
++        <div className="flex items-end justify-between gap-4">
++          <div>
++            <div className="mono text-3xl leading-none tracking-[-0.05em]">{value}</div>
++            <div className="mt-2 text-sm text-muted-foreground">{thresholdLabel}</div>
++          </div>
++        </div>
++        <div className="space-y-1 text-sm text-muted-foreground">
++          <p>{detail}</p>
++          <p>{changeLabel}</p>
++        </div>
++      </CardContent>
++    </Card>
++  );
++}
++
++function AlertSettingsCard({ alertConfig, onRuleChange }) {
++  return (
++    <Card className="rounded-xl shadow-none">
++      <CardHeader className="pb-4">
++        <CardTitle className="text-lg">告警设置</CardTitle>
++        <CardDescription>本地提醒不会阻断主流程，可以随时关闭或下调提醒。</CardDescription>
++      </CardHeader>
++      <CardContent className="space-y-4 pt-0">
++        <Alert variant="muted">
++          <AlertDescription>
++            口径说明：日花费按当前本地自然日的账单估算；失败率按当天已完结 + 已中断会话计算，进行中的会话不会计入分母。
++          </AlertDescription>
++        </Alert>
++
++        <div className="space-y-3 rounded-xl border p-4">
++          <div className="flex items-start justify-between gap-3">
++            <div className="space-y-1">
++              <div className="flex items-center gap-2">
++                <Label htmlFor="daily-spend-threshold">日花费阈值</Label>
++                <MetricHint title="日花费阈值">
++                  触发条件为今日 `dailyLedger` 估算费用大于等于阈值。最小值 0，最大值{" "}
++                  {ALERT_CONFIG_LIMITS.dailySpend.maxThresholdUsd}。
++                </MetricHint>
++              </div>
++              <p className="text-sm text-muted-foreground">
++                默认 ${ALERT_CONFIG_LIMITS.dailySpend.defaultThresholdUsd.toFixed(2)}，支持 0
++                到 {ALERT_CONFIG_LIMITS.dailySpend.maxThresholdUsd} USD。
++              </p>
++            </div>
++            <Button
++              type="button"
++              size="sm"
++              variant={alertConfig.dailySpend.enabled ? "secondary" : "outline"}
++              onClick={() =>
++                onRuleChange("dailySpend", {
++                  enabled: !alertConfig.dailySpend.enabled,
++                })
++              }
++            >
++              {alertConfig.dailySpend.enabled ? "关闭提醒" : "开启提醒"}
++            </Button>
++          </div>
++          <Input
++            id="daily-spend-threshold"
++            type="number"
++            min={ALERT_CONFIG_LIMITS.dailySpend.minThresholdUsd}
++            max={ALERT_CONFIG_LIMITS.dailySpend.maxThresholdUsd}
++            step="0.5"
++            value={alertConfig.dailySpend.thresholdUsd}
++            onChange={(event) =>
++              onRuleChange("dailySpend", {
++                thresholdUsd: event.target.value,
++              })
++            }
++          />
++        </div>
++
++        <div className="space-y-3 rounded-xl border p-4">
++          <div className="flex items-start justify-between gap-3">
++            <div className="space-y-1">
++              <div className="flex items-center gap-2">
++                <Label htmlFor="failure-rate-threshold">失败率阈值</Label>
++                <MetricHint title="失败率阈值">
++                  触发条件为当天已中断会话数 / 当天已完结 + 已中断会话数，结果大于等于阈值。最小值 0，最大值 100。
++                </MetricHint>
++              </div>
++              <p className="text-sm text-muted-foreground">
++                默认 {ALERT_CONFIG_LIMITS.failureRate.defaultThresholdPercent}% ，支持 0 到 100%。
++              </p>
++            </div>
++            <Button
++              type="button"
++              size="sm"
++              variant={alertConfig.failureRate.enabled ? "secondary" : "outline"}
++              onClick={() =>
++                onRuleChange("failureRate", {
++                  enabled: !alertConfig.failureRate.enabled,
++                })
++              }
++            >
++              {alertConfig.failureRate.enabled ? "关闭提醒" : "开启提醒"}
++            </Button>
++          </div>
++          <Input
++            id="failure-rate-threshold"
++            type="number"
++            min={ALERT_CONFIG_LIMITS.failureRate.minThresholdPercent}
++            max={ALERT_CONFIG_LIMITS.failureRate.maxThresholdPercent}
++            step="1"
++            value={alertConfig.failureRate.thresholdPercent}
++            onChange={(event) =>
++              onRuleChange("failureRate", {
++                thresholdPercent: event.target.value,
++              })
++            }
++          />
++        </div>
++      </CardContent>
++    </Card>
++  );
++}
++
++function DecisionRankingTable({
++  rows,
++  labelFormatter = (value) => value,
++  emptyCopy = "当前窗口暂无可用数据。",
++}) {
++  if (!rows?.length) {
++    return <EmptyState>{emptyCopy}</EmptyState>;
++  }
++
++  return (
++    <ScrollArea className="overflow-hidden rounded-xl border">
++      <Table className="min-w-full table-fixed">
++        <TableHeader>
++          <TableRow>
++            <TableHead className="w-[12%]">Top</TableHead>
++            <TableHead className="w-[34%]">对象</TableHead>
++            <TableHead className="w-[18%] text-right">费用</TableHead>
++            <TableHead className="w-[20%] text-right">Token</TableHead>
++            <TableHead className="w-[16%] text-right">会话</TableHead>
++          </TableRow>
++        </TableHeader>
++        <TableBody>
++          {rows.map((row, index) => (
++            <TableRow key={`${row.key || row.label || "row"}-${index}`}>
++              <TableCell className="mono">{index + 1}</TableCell>
++              <TableCell className="break-words font-medium">{labelFormatter(row.label)}</TableCell>
++              <TableCell className="text-right mono">{formatUsd(row.totalUsd)}</TableCell>
++              <TableCell className="text-right mono">{formatTokenMillions(row.totalTokens)}</TableCell>
++              <TableCell className="text-right mono">{formatTokenRaw(row.threadCount)}</TableCell>
++            </TableRow>
++          ))}
++        </TableBody>
++      </Table>
++    </ScrollArea>
++  );
++}
++
++function DecisionTopCostCard({
++  title,
++  note,
++  todayRows,
++  last7DaysRows,
++  labelFormatter,
++}) {
++  return (
++    <Card className="rounded-xl shadow-none">
++      <CardHeader className="pb-4">
++        <CardTitle className="text-lg">{title}</CardTitle>
++        <CardDescription>{note || "当前仅展示可解析到 token_count 增量费用的记录。"}</CardDescription>
++      </CardHeader>
++      <CardContent className="space-y-4 pt-0">
++        <div className="space-y-2">
++          <Label>今日</Label>
++          <DecisionRankingTable
++            rows={todayRows || []}
++            labelFormatter={labelFormatter}
++            emptyCopy="今日暂无可用成本数据。"
++          />
++        </div>
++        <div className="space-y-2">
++          <Label>近 7 天</Label>
++          <DecisionRankingTable
++            rows={last7DaysRows || []}
++            labelFormatter={labelFormatter}
++            emptyCopy="近 7 天暂无可用成本数据。"
++          />
++        </div>
++      </CardContent>
++    </Card>
++  );
++}
++
++function DecisionEfficiencyCard({ efficiency }) {
++  const metricRows = [
++    {
++      label: "每千 Token 成本",
++      today: formatUsdPerThousandTokens(efficiency?.today?.costPer1kTokens),
++      last7: formatUsdPerThousandTokens(efficiency?.last7Days?.costPer1kTokens),
++      note: efficiency?.costPer1kNote || "-",
++    },
++    {
++      label: "缓存命中率",
++      today: formatDecisionPercent(efficiency?.today?.cacheHitRate),
++      last7: formatDecisionPercent(efficiency?.last7Days?.cacheHitRate),
++      note: efficiency?.cacheHitRateNote || "-",
++    },
++    {
++      label: "成功率",
++      today: formatDecisionPercent(efficiency?.today?.successRate),
++      last7: formatDecisionPercent(efficiency?.last7Days?.successRate),
++      note: efficiency?.successRateNote || "-",
++    },
++  ];
++
++  return (
++    <Card className="rounded-xl shadow-none">
++      <CardHeader className="pb-4">
++        <CardTitle className="text-lg">单位效率指标</CardTitle>
++        <CardDescription>对比今日与近 7 天的单位成本、缓存命中率和终态成功率。</CardDescription>
++      </CardHeader>
++      <CardContent className="space-y-4 pt-0">
++        <ScrollArea className="overflow-hidden rounded-xl border">
++          <Table className="min-w-full table-fixed">
++            <TableHeader>
++              <TableRow>
++                <TableHead className="w-[22%]">指标</TableHead>
++                <TableHead className="w-[18%] text-right">今日</TableHead>
++                <TableHead className="w-[18%] text-right">近 7 天</TableHead>
++                <TableHead className="w-[42%]">口径</TableHead>
++              </TableRow>
++            </TableHeader>
++            <TableBody>
++              {metricRows.map((row) => (
++                <TableRow key={row.label}>
++                  <TableCell>{row.label}</TableCell>
++                  <TableCell className="text-right mono">{row.today}</TableCell>
++                  <TableCell className="text-right mono">{row.last7}</TableCell>
++                  <TableCell className="text-xs text-muted-foreground">{row.note}</TableCell>
++                </TableRow>
++              ))}
++            </TableBody>
++          </Table>
++        </ScrollArea>
++        <div className="grid gap-3 sm:grid-cols-2">
++          <div className="rounded-lg border bg-muted/30 p-3 text-sm text-muted-foreground">
++            <div>今日样本：{formatTokenMillions(efficiency?.today?.totalTokens)} · {formatUsd(efficiency?.today?.totalUsd)}</div>
++            <div>今日终态：{formatTokenRaw(efficiency?.today?.terminalCount)}（成功 {formatTokenRaw(efficiency?.today?.successCount)}）</div>
++          </div>
++          <div className="rounded-lg border bg-muted/30 p-3 text-sm text-muted-foreground">
++            <div>近 7 天样本：{formatTokenMillions(efficiency?.last7Days?.totalTokens)} · {formatUsd(efficiency?.last7Days?.totalUsd)}</div>
++            <div>近 7 天终态：{formatTokenRaw(efficiency?.last7Days?.terminalCount)}（成功 {formatTokenRaw(efficiency?.last7Days?.successCount)}）</div>
++          </div>
++        </div>
++      </CardContent>
++    </Card>
++  );
++}
++
++function DecisionFailuresCard({
++  failures,
++  generatedAt,
++  availableThreadIds,
++  onOpenThread,
++}) {
++  const latestFailureAt = failures?.latestFailedAt || null;
++  const latestFailureText = latestFailureAt
++    ? `${new Date(latestFailureAt).toLocaleString("zh-CN")} · ${formatRelativeTime(
++        latestFailureAt,
++        generatedAt
++      )}`
++    : "近 7 天暂无失败";
++  const recentFailures = failures?.recent || [];
++
++  return (
++    <Card className="rounded-xl shadow-none">
++      <CardHeader className="pb-4">
++        <CardTitle className="text-lg">失败任务概览</CardTitle>
++        <CardDescription>{failures?.note || "失败定义为线程最新终态为“已中断”。"}</CardDescription>
++      </CardHeader>
++      <CardContent className="space-y-4 pt-0">
++        <div className="grid gap-3 sm:grid-cols-3">
++          <div className="rounded-lg border bg-muted/30 p-3">
++            <Label className="text-xs tracking-[0.14em]">今日失败数量</Label>
++            <div className="mono mt-2 text-2xl">{formatTokenRaw(failures?.todayCount)}</div>
++          </div>
++          <div className="rounded-lg border bg-muted/30 p-3">
++            <Label className="text-xs tracking-[0.14em]">近 7 天失败数量</Label>
++            <div className="mono mt-2 text-2xl">{formatTokenRaw(failures?.last7DaysCount)}</div>
++          </div>
++          <div className="rounded-lg border bg-muted/30 p-3">
++            <Label className="text-xs tracking-[0.14em]">最近失败时间</Label>
++            <div className="mt-2 text-sm leading-6">{latestFailureText}</div>
++          </div>
++        </div>
++        {recentFailures.length ? (
++          <ScrollArea className="overflow-hidden rounded-xl border">
++            <Table className="min-w-[760px] table-fixed">
++              <TableHeader>
++                <TableRow>
++                  <TableHead className="w-[6%]">#</TableHead>
++                  <TableHead className="w-[29%]">任务</TableHead>
++                  <TableHead className="w-[18%]">项目</TableHead>
++                  <TableHead className="w-[18%]">模型</TableHead>
++                  <TableHead className="w-[17%]">失败时间</TableHead>
++                  <TableHead className="w-[12%] text-right">详情</TableHead>
++                </TableRow>
++              </TableHeader>
++              <TableBody>
++                {recentFailures.map((row, index) => {
++                  const canOpen = availableThreadIds.has(row.threadId);
++                  return (
++                    <TableRow key={`${row.threadId || "failure"}-${index}`}>
++                      <TableCell className="mono">{index + 1}</TableCell>
++                      <TableCell className="break-words">
++                        <div className="font-medium">{row.titlePreview || row.title || row.threadId || "-"}</div>
++                        <div className="mono mt-1 break-all text-xs text-muted-foreground">{row.threadId || "-"}</div>
++                      </TableCell>
++                      <TableCell className="break-words">{row.projectLabel || "-"}</TableCell>
++                      <TableCell className="break-words">{formatModelLabel(row.modelName)}</TableCell>
++                      <TableCell className="text-sm">{row.failedAt ? new Date(row.failedAt).toLocaleString("zh-CN") : "-"}</TableCell>
++                      <TableCell className="text-right">
++                        <Button
++                          type="button"
++                          variant="outline"
++                          size="sm"
++                          disabled={!canOpen}
++                          onClick={() => onOpenThread(row.threadId)}
++                        >
++                          {canOpen ? "查看详情" : "详情不可用"}
++                        </Button>
++                      </TableCell>
++                    </TableRow>
++                  );
++                })}
++              </TableBody>
++            </Table>
++          </ScrollArea>
++        ) : (
++          <EmptyState>近 7 天暂无失败任务明细。</EmptyState>
++        )}
++      </CardContent>
++    </Card>
+   );
+ }
+ 
+@@ -508,23 +1438,47 @@ function CodexDashboard({
+   onCodexHomeInputChange,
+   onApplySource,
+   onResetSource,
++  onRefreshSnapshot,
++  refreshStatus,
++  refreshMessage,
++  onOpenPricing,
++  alertConfig,
++  alertMetrics,
++  alertStates,
++  onAlertRuleChange,
+ }) {
+   const [sessionsTab, setSessionsTab] = useState("sessions");
+   const [billingScope, setBillingScope] = useState("cumulative");
++  const [sessionView, setSessionView] = useState("cost");
+   const [selectedThreadId, setSelectedThreadId] = useState(null);
+   const [sessionPage, setSessionPage] = useState(1);
+   const [range, setRange] = useState({ start: 0, end: 0 });
++  const [datePreset, setDatePreset] = useState("custom");
++  const [customDateRange, setCustomDateRange] = useState({ startDay: "", endDay: "" });
++  const [favoriteViews, setFavoriteViews] = useState(() => readFavoriteViews());
++  const [favoriteName, setFavoriteName] = useState("");
++  const [favoriteMessage, setFavoriteMessage] = useState("");
++  const [exportMode, setExportMode] = useState("csv");
++  const [exportMessage, setExportMessage] = useState("");
+   const [filters, setFilters] = useState({
+     title: "",
+     model: "",
+     origin: "",
+-    createdDate: "",
+   });
+ 
+   const deferredFilters = useDeferredValue(filters);
++  const activeDateRange = useMemo(
++    () => getDatePresetRange(snapshot.generatedAt, datePreset, customDateRange),
++    [snapshot.generatedAt, datePreset, customDateRange]
++  );
+   const filteredThreads = useMemo(
+-    () => getFilteredSessionRows(snapshot.recentThreads || [], deferredFilters),
+-    [snapshot.recentThreads, deferredFilters]
++    () =>
++      getFilteredSessionRows(snapshot.recentThreads || [], {
++        ...deferredFilters,
++        createdFrom: activeDateRange.startDay,
++        createdTo: activeDateRange.endDay,
++      }),
++    [snapshot.recentThreads, deferredFilters, activeDateRange]
+   );
+   const totalPages = getSessionPageCount(filteredThreads, 10);
+   const safePage = Math.min(totalPages, Math.max(1, sessionPage));
+@@ -538,36 +1492,53 @@ function CodexDashboard({
+     setSessionPage(1);
+   }, [deferredFilters]);
+ 
++  useEffect(() => {
++    setSessionPage(1);
++  }, [activeDateRange.startDay, activeDateRange.endDay]);
++
+   const scopeRows = useMemo(
+     () => getScopeRows(snapshot.dailyLedger || [], snapshot.generatedAt, billingScope),
+     [snapshot.dailyLedger, snapshot.generatedAt, billingScope]
+   );
++  const filteredScopeRows = useMemo(
++    () => filterRowsByDayRange(scopeRows, activeDateRange.startDay, activeDateRange.endDay),
++    [scopeRows, activeDateRange]
++  );
+ 
+   useEffect(() => {
+-    if (!scopeRows.length) {
++    if (!filteredScopeRows.length) {
+       setRange({ start: 0, end: 0 });
+       return;
+     }
+ 
+-    setRange((current) => {
+-      const max = scopeRows.length - 1;
+-      const start = Math.max(0, Math.min(current.start, max));
+-      const end = Math.max(start, Math.min(current.end ?? max, max));
+-      return { start, end };
+-    });
+-  }, [scopeRows]);
++    const max = filteredScopeRows.length - 1;
++    setRange({ start: 0, end: max });
++  }, [filteredScopeRows]);
+ 
+   const visibleLedgerRows = useMemo(
+-    () => getVisibleLedgerRows(scopeRows, range.start, range.end ?? scopeRows.length - 1),
+-    [scopeRows, range]
++    () => getVisibleLedgerRows(filteredScopeRows, range.start, range.end ?? filteredScopeRows.length - 1),
++    [filteredScopeRows, range]
+   );
+-  const scopeSummary = summarizeLedgerRows(scopeRows);
++  const scopeSummary = summarizeLedgerRows(filteredScopeRows);
+   const visibleSummary = summarizeLedgerRows(visibleLedgerRows);
++  const homepageSummary = useMemo(
++    () => getHomepageSummary(snapshot.dailyLedger || [], snapshot.generatedAt),
++    [snapshot.dailyLedger, snapshot.generatedAt]
++  );
++  const anomalyRows = useMemo(
++    () => detectCostSpikes(snapshot.recentThreads || []),
++    [snapshot.recentThreads]
++  );
++  const decision = snapshot.decision || EMPTY_SNAPSHOT.decision;
+ 
+   const currentSession = snapshot.live.currentSession;
+   const rateLimits = snapshot.live.rateLimits;
+   const primary = rateLimits?.primary || null;
+   const secondary = rateLimits?.secondary || null;
++  const resolvedAlertStates = {
++    dailySpend: alertStates?.dailySpend || { phase: "inactive" },
++    failureRate: alertStates?.failureRate || { phase: "inactive" },
++  };
+ 
+   const sourceCards = (
+     <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto sm:justify-end sm:gap-3">
+@@ -634,9 +1605,145 @@ function CodexDashboard({
+     );
+   };
+ 
++  const handleDatePresetChange = (preset) => {
++    setDatePreset(preset);
++    setSessionPage(1);
++    setExportMessage("");
++    if (preset !== "custom") {
++      setFavoriteMessage("");
++    }
++  };
++
++  const handleCustomRangeChange = (field, date) => {
++    setDatePreset("custom");
++    setSessionPage(1);
++    setCustomDateRange((current) => ({
++      ...current,
++      [field]: formatDateValue(date),
++    }));
++  };
++
++  const handleSaveFavorite = () => {
++    const trimmedName = favoriteName.trim();
++    if (!trimmedName) {
++      setFavoriteMessage("请输入收藏视图名称。");
++      return;
++    }
++
++    const nextFavorite = {
++      id: `favorite-${Date.now()}`,
++      name: trimmedName,
++      sessionsTab,
++      billingScope,
++      sessionView,
++      datePreset,
++      customDateRange,
++      filters,
++    };
++    const dedupedFavorites = favoriteViews.filter((favorite) => favorite.name !== trimmedName);
++    const nextFavorites = [nextFavorite, ...dedupedFavorites].slice(0, 8);
++    setFavoriteViews(nextFavorites);
++    persistFavoriteViews(nextFavorites);
++    setFavoriteName("");
++    setFavoriteMessage(`已保存收藏视图：${trimmedName}`);
++  };
++
++  const handleApplyFavorite = (favorite) => {
++    const nextSessionView = SESSION_VIEW_OPTIONS.some((option) => option.value === favorite.sessionView)
++      ? favorite.sessionView
++      : "cost";
++    setSessionsTab(favorite.sessionsTab || "sessions");
++    setBillingScope(favorite.billingScope || "cumulative");
++    setSessionView(nextSessionView);
++    setDatePreset(favorite.datePreset || "custom");
++    setCustomDateRange(favorite.customDateRange || { startDay: "", endDay: "" });
++    setFilters({
++      title: favorite.filters?.title || "",
++      model: favorite.filters?.model || "",
++      origin: favorite.filters?.origin || "",
++    });
++    setSessionPage(1);
++    setFavoriteMessage(`已应用收藏视图：${favorite.name}`);
++  };
++
++  const handleDeleteFavorite = (favoriteId) => {
++    const nextFavorites = favoriteViews.filter((favorite) => favorite.id !== favoriteId);
++    setFavoriteViews(nextFavorites);
++    persistFavoriteViews(nextFavorites);
++    setFavoriteMessage(nextFavorites.length ? "已删除收藏视图。" : "收藏视图已清空。");
++  };
++
++  const handleExportCurrentView = () => {
++    const exportRows =
++      sessionsTab === "billing"
++        ? exportMode === "csv"
++          ? filteredScopeRows
++          : visibleLedgerRows
++        : exportMode === "csv"
++          ? filteredThreads
++          : pageRows;
++    const snapshotData =
++      sessionsTab === "billing"
++        ? buildBillingExportSnapshot(exportRows)
++        : buildSessionExportSnapshot(exportRows, sessionView);
++
++    if (!snapshotData.rows.length) {
++      setExportMessage(exportMode === "csv" ? "当前筛选结果没有可导出的 CSV 数据。" : "当前视图没有可导出的快照数据。");
++      return;
++    }
++
++    const filename = [
++      "codex-dashboard",
++      sessionsTab,
++      sessionsTab === "sessions" ? sessionView : billingScope,
++      activeDateRange.startDay || "all",
++      activeDateRange.endDay || "all",
++    ].join("-");
++    if (exportMode === "view") {
++      const exported = triggerJsonDownload(`${filename}-snapshot.json`, {
++        exportedAt: snapshot.generatedAt,
++        exportMode,
++        sessionsTab,
++        sessionView,
++        billingScope,
++        datePreset,
++        activeDateRange,
++        filters: deferredFilters,
++        columns: snapshotData.columns,
++        rows: snapshotData.rows,
++      });
++      setExportMessage(exported ? `已导出当前视图快照，共 ${snapshotData.rows.length} 行。` : "当前环境不支持导出。");
++      return;
++    }
++
++    const exported = triggerCsvDownload(`${filename}.csv`, stringifyCsvSnapshot(snapshotData));
++    setExportMessage(exported ? `已导出 CSV，共 ${snapshotData.rows.length} 行。` : "当前环境不支持导出。");
++  };
++
++  const dailySpendThresholdLabel = alertConfig.dailySpend.enabled
++    ? `阈值 ${formatUsd(alertConfig.dailySpend.thresholdUsd)}`
++    : "提醒已关闭";
++  const failureRateThresholdLabel = alertConfig.failureRate.enabled
++    ? `阈值 ${formatPercent(alertConfig.failureRate.thresholdPercent)}`
++    : "提醒已关闭";
++  const availableThreadIds = new Set((snapshot.recentThreads || []).map((row) => row.id));
++
+   return (
+     <>
+       <div className="grid min-w-0 gap-5">
++        <HomepageTopInfoBand
++          snapshot={snapshot}
++          refreshStatus={refreshStatus}
++          refreshMessage={refreshMessage}
++          anomalyCount={anomalyRows.length}
++          onRefreshSnapshot={onRefreshSnapshot}
++          onOpenPricing={onOpenPricing}
++        />
++        <HomepageKeyCards
++          summary={homepageSummary}
++          dailyBudgetUsd={alertConfig.dailySpend?.thresholdUsd}
++        />
++
+         <SectionCard title="数据源与刷新" description="本地数据源、目录切换与来源说明" actions={sourceCards}>
+           <div className="grid min-w-0 gap-4 lg:grid-cols-[minmax(0,1.1fr)_minmax(320px,0.9fr)]">
+             <div className="grid min-w-0 gap-4 md:grid-cols-2">
+@@ -693,15 +1800,113 @@ function CodexDashboard({
+             </div>
+           ) : (
+             <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
+-              <MetricTile label="Codex 本地总消耗" value={formatTokenMillions(snapshot.overview.totalTokens)} subvalue={`${formatTokenRaw(snapshot.overview.totalTokens)} tokens`} />
+-              <MetricTile label="Codex 本地线程数" value={formatTokenRaw(snapshot.overview.totalThreads)} subvalue="未归档会话" />
+-              <MetricTile label="当前 Codex 线程" value={currentSession ? formatTokenMillions(currentSession.totalTokens) : "-"} subvalue={currentSession ? `${currentSession.usageOriginLabel || "Codex 本地"} · 最近一次 ${formatTokenMillions(currentSession.lastTokens)}` : "最近一次不可用"} tone="dark" />
+-              <MetricTile label="Codex 本地累计费用" value={formatUsd(snapshot.overview.totalEstimatedCost)} subvalue="根据本地日志里的每次增量使用记录估算" compact tone="muted" />
+-              <MetricTile label="当前模型" value={formatModelLabel(currentSession?.modelName)} subvalue={currentSession?.cost ? `当前会话费用 ${formatUsd(currentSession.cost.totalUsd)}` : "当前会话费用不可用"} compact tone="teal" wrapValue />
++              <MetricTile
++                label="Codex 本地总消耗"
++                value={formatTokenMillions(snapshot.overview.totalTokens)}
++                subvalue={`${formatTokenRaw(snapshot.overview.totalTokens)} tokens`}
++                tooltip="汇总自本地 SQLite `threads.tokens_used` 的未归档会话，不包含 OpenClaw / OAuth 面板。"
++              />
++              <MetricTile
++                label="Codex 本地线程数"
++                value={formatTokenRaw(snapshot.overview.totalThreads)}
++                subvalue="未归档会话"
++                tooltip="仅统计当前数据源下未归档线程数，用来衡量本地 Codex 工作负载规模。"
++              />
++              <MetricTile
++                label="当前 Codex 线程"
++                value={currentSession ? formatTokenMillions(currentSession.totalTokens) : "-"}
++                subvalue={
++                  currentSession
++                    ? `${currentSession.usageOriginLabel || "Codex 本地"} · 最近一次 ${formatTokenMillions(currentSession.lastTokens)}`
++                    : "最近一次不可用"
++                }
++                tone="dark"
++                tooltip="读取最近一次 token_count 快照，对应最新活跃会话的累计 token，而不是全局累计。"
++              />
++              <MetricTile
++                label="Codex 本地累计费用"
++                value={formatUsd(snapshot.overview.totalEstimatedCost)}
++                subvalue="根据本地日志里的每次增量使用记录估算"
++                compact
++                tone="muted"
++                tooltip="基于 `last_token_usage` 与本地价格表做估算，属于账单近似值，不等同于官方最终结算。"
++              />
++              <MetricTile
++                label="当前模型"
++                value={formatModelLabel(currentSession?.modelName)}
++                subvalue={
++                  currentSession?.cost
++                    ? `当前会话费用 ${formatUsd(currentSession.cost.totalUsd)}`
++                    : "当前会话费用不可用"
++                }
++                compact
++                tone="teal"
++                wrapValue
++                tooltip="来自最近活跃会话的 turn_context / token_count 组合结果，用于解释当前费用估算对应的模型。"
++              />
+             </div>
+           )}
+         </SectionCard>
+ 
++        <SectionCard title="告警与说明" description="本地阈值提醒，不阻断现有数据读取与刷新">
++          <div className="grid gap-4 xl:grid-cols-[minmax(0,1.1fr)_minmax(320px,0.9fr)]">
++            <div className="grid gap-4 md:grid-cols-2">
++              <AlertStatusCard
++                title="日花费告警"
++                tooltip="按 `snapshot.generatedAt` 所在本地自然日，读取 `dailyLedger` 当天费用估算值。超过阈值即触发，回落后显示已恢复。"
++                state={resolvedAlertStates.dailySpend}
++                value={formatUsd(alertMetrics.dailySpendUsd)}
++                thresholdLabel={dailySpendThresholdLabel}
++                detail={`今日账单估算基于 ${alertMetrics.todayKey || "-"} 的本地日账单汇总。`}
++                changeLabel={`${alertPhaseLabel(resolvedAlertStates.dailySpend.phase)}时间 ${formatAlertTimestamp(resolvedAlertStates.dailySpend.changedAt)}`}
++              />
++              <AlertStatusCard
++                title="失败率告警"
++                tooltip="失败率 = 当天已中断会话 / 当天已完结 + 已中断会话；进行中或等待回答的会话不会计入分母，避免误报。"
++                state={resolvedAlertStates.failureRate}
++                value={alertMetrics.terminalCount ? formatPercent(alertMetrics.failureRatePercent) : "-"}
++                thresholdLabel={`${failureRateThresholdLabel} · 失败 ${alertMetrics.failureCount} / 终态 ${alertMetrics.terminalCount}`}
++                detail={
++                  alertMetrics.terminalCount
++                    ? `今日共有 ${alertMetrics.completedCount} 个已完结、${alertMetrics.failureCount} 个已中断会话。`
++                    : "今日暂无可计算失败率的终态会话。"
++                }
++                changeLabel={`${alertPhaseLabel(resolvedAlertStates.failureRate.phase)}时间 ${formatAlertTimestamp(resolvedAlertStates.failureRate.changedAt)}`}
++              />
++            </div>
++
++            <AlertSettingsCard alertConfig={alertConfig} onRuleChange={onAlertRuleChange} />
++          </div>
++        </SectionCard>
++
++        <SectionCard title="Round2 决策看板" description="Top 成本排行、单位效率指标和失败任务概览">
++          <div className="grid gap-4 xl:grid-cols-2">
++            <DecisionTopCostCard
++              title="Top 项目成本排行（今日/7天）"
++              note={decision.projectCost?.note}
++              todayRows={decision.projectCost?.today || []}
++              last7DaysRows={decision.projectCost?.last7Days || []}
++              labelFormatter={(value) => value || "未知项目"}
++            />
++            <DecisionTopCostCard
++              title="Top 模型成本排行（今日/7天）"
++              note={decision.modelCost?.note}
++              todayRows={decision.modelCost?.today || []}
++              last7DaysRows={decision.modelCost?.last7Days || []}
++              labelFormatter={(value) => formatModelLabel(value)}
++            />
++          </div>
++          <div className="mt-4 grid gap-4 xl:grid-cols-2">
++            <DecisionEfficiencyCard efficiency={decision.efficiency} />
++            <DecisionFailuresCard
++              failures={decision.failures}
++              generatedAt={snapshot.generatedAt}
++              availableThreadIds={availableThreadIds}
++              onOpenThread={setSelectedThreadId}
++            />
++          </div>
++        </SectionCard>
++
+         <SectionCard title="限制窗口" description="本地日志中最近一次出现的限制快照">
+           <div className="grid gap-4 xl:grid-cols-3">
+             {renderWindowCard(primary)}
+@@ -734,33 +1939,189 @@ function CodexDashboard({
+             </Card>
+             <Card className="rounded-xl shadow-none">
+               <CardHeader className="pb-4">
+-                <CardTitle className="text-lg">模型价格表</CardTitle>
+-                <CardDescription>同价模型自动合并展示</CardDescription>
++                <CardTitle className="text-lg">模型价格表入口</CardTitle>
++                <CardDescription>模型价格表已迁移到独立页面：设置 / 模型价格</CardDescription>
+               </CardHeader>
+-              <CardContent className="pt-0">
+-                <PricingCatalogTable rows={snapshot.pricingCatalog || []} />
++              <CardContent className="space-y-3 pt-0">
++                <div className="text-sm text-muted-foreground">
++                  首页仅保留入口，便于总览聚焦。当前识别到 {formatTokenRaw(snapshot.pricingCatalog?.length || 0)} 条模型价格。
++                </div>
++                <Button type="button" variant="outline" onClick={onOpenPricing}>
++                  前往 设置/模型价格
++                </Button>
+               </CardContent>
+             </Card>
+           </div>
+         </SectionCard>
+       </div>
+ 
+-      <SectionCard title="全部会话与账单" description="会话详情、账单走势与来源筛选" className="rounded-2xl lg:col-span-2">
++      <SectionCard title="全部会话与账单" description="会话详情、账单走势、快捷筛选、收藏视图与导出" className="rounded-2xl lg:col-span-2">
++        <div className="space-y-4">
++          <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
++            <div className="space-y-3">
++              <div className="flex flex-wrap gap-2">
++                {DATE_PRESET_OPTIONS.map((option) => (
++                  <Button
++                    key={option.value}
++                    type="button"
++                    size="sm"
++                    variant={datePreset === option.value ? "default" : "outline"}
++                    onClick={() => handleDatePresetChange(option.value)}
++                  >
++                    {option.label}
++                  </Button>
++                ))}
++              </div>
++              {datePreset === "custom" ? (
++                <div className="grid gap-3 sm:grid-cols-2">
++                  <div className="space-y-2">
++                    <Label>开始日期</Label>
++                    <Popover>
++                      <PopoverTrigger asChild>
++                        <Button variant="outline" className="w-full justify-start font-normal">
++                          {formatLocalDateLabel(customDateRange.startDay)}
++                        </Button>
++                      </PopoverTrigger>
++                      <PopoverContent className="w-auto p-0" align="start">
++                        <Calendar
++                          mode="single"
++                          selected={parseDateValue(customDateRange.startDay)}
++                          onSelect={(date) => handleCustomRangeChange("startDay", date)}
++                          initialFocus
++                        />
++                      </PopoverContent>
++                    </Popover>
++                  </div>
++                  <div className="space-y-2">
++                    <Label>结束日期</Label>
++                    <Popover>
++                      <PopoverTrigger asChild>
++                        <Button variant="outline" className="w-full justify-start font-normal">
++                          {formatLocalDateLabel(customDateRange.endDay)}
++                        </Button>
++                      </PopoverTrigger>
++                      <PopoverContent className="w-auto p-0" align="start">
++                        <Calendar
++                          mode="single"
++                          selected={parseDateValue(customDateRange.endDay)}
++                          onSelect={(date) => handleCustomRangeChange("endDay", date)}
++                          initialFocus
++                        />
++                        <div className="border-t p-3">
++                          <Button
++                            variant="ghost"
++                            size="sm"
++                            className="w-full"
++                            onClick={() => setCustomDateRange({ startDay: "", endDay: "" })}
++                          >
++                            清除自定义范围
++                          </Button>
++                        </div>
++                      </PopoverContent>
++                    </Popover>
++                  </div>
++                </div>
++              ) : null}
++              <p className="text-sm text-muted-foreground">当前时间范围：{formatDateRangeLabel(activeDateRange)}</p>
++            </div>
++
++            <div className="space-y-3 xl:min-w-[420px]">
++              <div className="flex flex-wrap gap-2 xl:justify-end">
++                {SESSION_VIEW_OPTIONS.map((option) => (
++                  <Button
++                    key={option.value}
++                    type="button"
++                    size="sm"
++                    variant={sessionView === option.value ? "default" : "outline"}
++                    onClick={() => {
++                      setSessionView(option.value);
++                      setExportMessage("");
++                    }}
++                  >
++                    {option.label}
++                  </Button>
++                ))}
++              </div>
++              <div className="flex flex-col gap-3 sm:flex-row">
++                <Input
++                  value={favoriteName}
++                  onChange={(event) => setFavoriteName(event.target.value)}
++                  placeholder="输入收藏视图名称"
++                />
++                <Button type="button" variant="outline" onClick={handleSaveFavorite}>
++                  收藏视图
++                </Button>
++                <Select value={exportMode} onValueChange={(value) => setExportMode(value)}>
++                  <SelectTrigger className="sm:w-[260px]">
++                    <SelectValue />
++                  </SelectTrigger>
++                  <SelectContent>
++                    {EXPORT_MODE_OPTIONS.map((option) => (
++                      <SelectItem key={option.value} value={option.value}>
++                        {option.label}
++                      </SelectItem>
++                    ))}
++                  </SelectContent>
++                </Select>
++                <Button type="button" onClick={handleExportCurrentView}>
++                  {exportMode === "csv" ? "导出 CSV" : "导出当前视图"}
++                </Button>
++              </div>
++              {favoriteMessage ? <p className="text-sm text-muted-foreground">{favoriteMessage}</p> : null}
++              {exportMessage ? <p className="text-sm text-muted-foreground">{exportMessage}</p> : null}
++            </div>
++          </div>
++
++          <div className="space-y-2">
++            <Label>收藏视图</Label>
++            {favoriteViews.length ? (
++              <div className="flex flex-wrap gap-2">
++                {favoriteViews.map((favorite) => (
++                  <div key={favorite.id} className="flex items-center gap-2 rounded-full border bg-muted/40 px-3 py-1.5">
++                    <button type="button" className="text-sm font-medium" onClick={() => handleApplyFavorite(favorite)}>
++                      {favorite.name}
++                    </button>
++                    <button
++                      type="button"
++                      className="text-xs text-muted-foreground transition-colors hover:text-foreground"
++                      onClick={() => handleDeleteFavorite(favorite.id)}
++                    >
++                      删除
++                    </button>
++                  </div>
++                ))}
++              </div>
++            ) : (
++              <p className="text-sm text-muted-foreground">暂无收藏视图，可将常用筛选条件和当前视图一并保存。</p>
++            )}
++          </div>
++        </div>
++
+         <Tabs value={sessionsTab} onValueChange={setSessionsTab}>
+-          <TabsList className="w-full sm:w-auto">
++          <TabsList className="mt-4 w-full sm:w-auto">
+             <TabsTrigger value="sessions">全部会话</TabsTrigger>
+             <TabsTrigger value="billing">账单走势</TabsTrigger>
+           </TabsList>
+ 
+           <TabsContent value="sessions">
+-            <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
++            <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+               <div className="space-y-2">
+                 <Label htmlFor="filter-title" className="tracking-[0.14em]">按标题筛选</Label>
+-                <Input id="filter-title" value={filters.title} onChange={(event) => setFilters((current) => ({ ...current, title: event.target.value }))} placeholder="输入标题关键词" />
++                <Input
++                  id="filter-title"
++                  value={filters.title}
++                  onChange={(event) => setFilters((current) => ({ ...current, title: event.target.value }))}
++                  placeholder="输入标题关键词"
++                />
+               </div>
+               <div className="space-y-2">
+                 <Label htmlFor="filter-model" className="tracking-[0.14em]">按模型筛选</Label>
+-                <Input id="filter-model" value={filters.model} onChange={(event) => setFilters((current) => ({ ...current, model: event.target.value }))} placeholder="输入模型名" />
++                <Input
++                  id="filter-model"
++                  value={filters.model}
++                  onChange={(event) => setFilters((current) => ({ ...current, model: event.target.value }))}
++                  placeholder="输入模型名"
++                />
+               </div>
+               <div className="space-y-2">
+                 <Label className="tracking-[0.14em]">来源筛选</Label>
+@@ -783,44 +2144,6 @@ function CodexDashboard({
+                   </SelectContent>
+                 </Select>
+               </div>
+-              <div className="space-y-2">
+-                <Label className="tracking-[0.14em]">创建日期</Label>
+-                <Popover>
+-                  <PopoverTrigger asChild>
+-                    <Button variant="outline" className="w-full justify-start font-normal">
+-                      {formatLocalDateLabel(filters.createdDate)}
+-                    </Button>
+-                  </PopoverTrigger>
+-                  <PopoverContent className="w-auto p-0" align="start">
+-                    <Calendar
+-                      mode="single"
+-                      selected={parseDateValue(filters.createdDate)}
+-                      onSelect={(date) =>
+-                        setFilters((current) => ({
+-                          ...current,
+-                          createdDate: formatDateValue(date),
+-                        }))
+-                      }
+-                      initialFocus
+-                    />
+-                    <div className="border-t p-3">
+-                      <Button
+-                        variant="ghost"
+-                        size="sm"
+-                        className="w-full"
+-                        onClick={() =>
+-                          setFilters((current) => ({
+-                            ...current,
+-                            createdDate: "",
+-                          }))
+-                        }
+-                      >
+-                        清除日期
+-                      </Button>
+-                    </div>
+-                  </PopoverContent>
+-                </Popover>
+-              </div>
+             </div>
+ 
+             <div className="mt-4 space-y-3 md:hidden">
+@@ -848,24 +2171,60 @@ function CodexDashboard({
+                         <Badge variant="secondary">{formatModelLabel(thread.modelName)}</Badge>
+                       </div>
+ 
+-                      <div className="grid grid-cols-2 gap-3 rounded-lg bg-muted/40 p-3 text-sm">
+-                        <div>
+-                          <Label className="mb-1 block tracking-[0.14em]">消耗</Label>
+-                          <div className="mono">{formatTokenMillions(thread.tokensUsed)}</div>
+-                        </div>
+-                        <div>
+-                          <Label className="mb-1 block tracking-[0.14em]">费用</Label>
+-                          <div className="mono">{thread.cost ? formatUsd(thread.cost.totalUsd) : "-"}</div>
++                      {sessionView === "cost" ? (
++                        <div className="grid grid-cols-2 gap-3 rounded-lg bg-muted/40 p-3 text-sm">
++                          <div>
++                            <Label className="mb-1 block tracking-[0.14em]">消耗</Label>
++                            <div className="mono">{formatTokenMillions(thread.tokensUsed)}</div>
++                          </div>
++                          <div>
++                            <Label className="mb-1 block tracking-[0.14em]">费用</Label>
++                            <div className="mono">{thread.cost ? formatUsd(thread.cost.totalUsd) : "-"}</div>
++                          </div>
++                          <div>
++                            <Label className="mb-1 block tracking-[0.14em]">创建</Label>
++                            <div>{formatResetTime(thread.createdAt)}</div>
++                          </div>
++                          <div>
++                            <Label className="mb-1 block tracking-[0.14em]">更新</Label>
++                            <div>{formatResetTime(thread.updatedAt)}</div>
++                          </div>
+                         </div>
+-                        <div>
+-                          <Label className="mb-1 block tracking-[0.14em]">创建</Label>
+-                          <div>{formatResetTime(thread.createdAt)}</div>
++                      ) : null}
++
++                      {sessionView === "performance" ? (
++                        <div className="grid grid-cols-2 gap-3 rounded-lg bg-muted/40 p-3 text-sm">
++                          <div>
++                            <Label className="mb-1 block tracking-[0.14em]">状态</Label>
++                            <div>{thread.statusLabel || "未知"}</div>
++                          </div>
++                          <div>
++                            <Label className="mb-1 block tracking-[0.14em]">来源</Label>
++                            <div>{thread.usageOriginLabel || "Codex 本地"}</div>
++                          </div>
++                          <div>
++                            <Label className="mb-1 block tracking-[0.14em]">创建</Label>
++                            <div>{formatResetTime(thread.createdAt)}</div>
++                          </div>
++                          <div>
++                            <Label className="mb-1 block tracking-[0.14em]">更新</Label>
++                            <div>{formatResetTime(thread.updatedAt)}</div>
++                          </div>
+                         </div>
+-                        <div>
+-                          <Label className="mb-1 block tracking-[0.14em]">更新</Label>
+-                          <div>{formatResetTime(thread.updatedAt)}</div>
++                      ) : null}
++
++                      {sessionView === "project" ? (
++                        <div className="space-y-3 rounded-lg bg-muted/40 p-3 text-sm">
++                          <div>
++                            <Label className="mb-1 block tracking-[0.14em]">项目</Label>
++                            <div>{thread.workspaceLabel || thread.cwd || "-"}</div>
++                          </div>
++                          <div>
++                            <Label className="mb-1 block tracking-[0.14em]">提示摘要</Label>
++                            <div className="text-muted-foreground">{summarizePromptText(thread.promptText || "暂无提示", 72)}</div>
++                          </div>
+                         </div>
+-                      </div>
++                      ) : null}
+ 
+                       <div className="border-t pt-3">
+                         <Label className="mb-1 block tracking-[0.14em]">会话 ID</Label>
+@@ -881,57 +2240,128 @@ function CodexDashboard({
+ 
+             <div className="mt-4 hidden md:block">
+               <ScrollArea className="overflow-hidden rounded-xl border">
+-                <Table className="min-w-[1080px]">
+-                  <TableHeader>
+-                    <TableRow>
+-                      <TableHead>会话ID</TableHead>
+-                      <TableHead>标题</TableHead>
+-                      <TableHead>来源</TableHead>
+-                      <TableHead>模型</TableHead>
+-                      <TableHead>状态</TableHead>
+-                      <TableHead>创建时间</TableHead>
+-                      <TableHead>消耗</TableHead>
+-                      <TableHead>费用</TableHead>
+-                      <TableHead>更新时间</TableHead>
+-                      <TableHead className="text-right">详情</TableHead>
+-                    </TableRow>
+-                  </TableHeader>
+-                  <TableBody>
+-                    {pageRows.length ? (
+-                      pageRows.map((thread) => (
+-                        <TableRow key={thread.id}>
+-                          <TableCell className="mono max-w-[180px] break-all text-xs text-muted-foreground">{thread.id}</TableCell>
+-                          <TableCell className="min-w-[260px]">
+-                            <div className="line-clamp-2 font-semibold">{thread.titlePreview || thread.title || "(untitled)"}</div>
+-                            <div className="mt-1 truncate text-xs text-muted-foreground">{thread.workspaceLabel || thread.cwd || "-"}</div>
+-                          </TableCell>
+-                          <TableCell>
+-                            <Badge variant={originBadgeVariant(thread.usageOrigin)}>{thread.usageOriginLabel || "Codex 本地"}</Badge>
+-                          </TableCell>
+-                          <TableCell>{formatModelLabel(thread.modelName)}</TableCell>
+-                          <TableCell>
+-                            <Badge variant={statusBadgeVariant(thread.statusLabel)}>{thread.statusLabel || "未知"}</Badge>
+-                          </TableCell>
+-                          <TableCell>{formatResetTime(thread.createdAt)}</TableCell>
+-                          <TableCell className="mono">{formatTokenMillions(thread.tokensUsed)}</TableCell>
+-                          <TableCell className="mono">{thread.cost ? formatUsd(thread.cost.totalUsd) : "-"}</TableCell>
+-                          <TableCell>{formatResetTime(thread.updatedAt)}</TableCell>
+-                          <TableCell className="text-right">
+-                            <Button variant="outline" size="sm" onClick={() => setSelectedThreadId(thread.id)}>
+-                              详情
+-                            </Button>
+-                          </TableCell>
++                {sessionView === "cost" ? (
++                  <Table className="min-w-[980px]">
++                    <TableHeader>
++                      <TableRow>
++                        <TableHead>会话 ID</TableHead>
++                        <TableHead>标题</TableHead>
++                        <TableHead>来源</TableHead>
++                        <TableHead>模型</TableHead>
++                        <TableHead>Token</TableHead>
++                        <TableHead>费用</TableHead>
++                        <TableHead>更新时间</TableHead>
++                        <TableHead className="text-right">详情</TableHead>
++                      </TableRow>
++                    </TableHeader>
++                    <TableBody>
++                      {pageRows.length ? (
++                        pageRows.map((thread) => (
++                          <TableRow key={thread.id}>
++                            <TableCell className="mono max-w-[180px] break-all text-xs text-muted-foreground">{thread.id}</TableCell>
++                            <TableCell className="min-w-[260px]">
++                              <div className="line-clamp-2 font-semibold">{thread.titlePreview || thread.title || "(untitled)"}</div>
++                              <div className="mt-1 truncate text-xs text-muted-foreground">{thread.workspaceLabel || thread.cwd || "-"}</div>
++                            </TableCell>
++                            <TableCell><Badge variant={originBadgeVariant(thread.usageOrigin)}>{thread.usageOriginLabel || "Codex 本地"}</Badge></TableCell>
++                            <TableCell>{formatModelLabel(thread.modelName)}</TableCell>
++                            <TableCell className="mono">{formatTokenMillions(thread.tokensUsed)}</TableCell>
++                            <TableCell className="mono">{thread.cost ? formatUsd(thread.cost.totalUsd) : "-"}</TableCell>
++                            <TableCell>{formatResetTime(thread.updatedAt)}</TableCell>
++                            <TableCell className="text-right">
++                              <Button variant="outline" size="sm" onClick={() => setSelectedThreadId(thread.id)}>详情</Button>
++                            </TableCell>
++                          </TableRow>
++                        ))
++                      ) : (
++                        <TableRow>
++                          <TableCell colSpan={8} className="text-center text-muted-foreground">没有符合条件的会话</TableCell>
++                        </TableRow>
++                      )}
++                    </TableBody>
++                  </Table>
++                ) : null}
++
++                {sessionView === "performance" ? (
++                  <Table className="min-w-[980px]">
++                    <TableHeader>
++                      <TableRow>
++                        <TableHead>会话 ID</TableHead>
++                        <TableHead>标题</TableHead>
++                        <TableHead>状态</TableHead>
++                        <TableHead>来源</TableHead>
++                        <TableHead>模型</TableHead>
++                        <TableHead>创建时间</TableHead>
++                        <TableHead>更新时间</TableHead>
++                        <TableHead className="text-right">详情</TableHead>
++                      </TableRow>
++                    </TableHeader>
++                    <TableBody>
++                      {pageRows.length ? (
++                        pageRows.map((thread) => (
++                          <TableRow key={thread.id}>
++                            <TableCell className="mono max-w-[180px] break-all text-xs text-muted-foreground">{thread.id}</TableCell>
++                            <TableCell className="min-w-[260px]">
++                              <div className="line-clamp-2 font-semibold">{thread.titlePreview || thread.title || "(untitled)"}</div>
++                              <div className="mt-1 truncate text-xs text-muted-foreground">{thread.workspaceLabel || thread.cwd || "-"}</div>
++                            </TableCell>
++                            <TableCell><Badge variant={statusBadgeVariant(thread.statusLabel)}>{thread.statusLabel || "未知"}</Badge></TableCell>
++                            <TableCell><Badge variant={originBadgeVariant(thread.usageOrigin)}>{thread.usageOriginLabel || "Codex 本地"}</Badge></TableCell>
++                            <TableCell>{formatModelLabel(thread.modelName)}</TableCell>
++                            <TableCell>{formatResetTime(thread.createdAt)}</TableCell>
++                            <TableCell>{formatResetTime(thread.updatedAt)}</TableCell>
++                            <TableCell className="text-right">
++                              <Button variant="outline" size="sm" onClick={() => setSelectedThreadId(thread.id)}>详情</Button>
++                            </TableCell>
++                          </TableRow>
++                        ))
++                      ) : (
++                        <TableRow>
++                          <TableCell colSpan={8} className="text-center text-muted-foreground">没有符合条件的会话</TableCell>
+                         </TableRow>
+-                      ))
+-                    ) : (
++                      )}
++                    </TableBody>
++                  </Table>
++                ) : null}
++
++                {sessionView === "project" ? (
++                  <Table className="min-w-[980px]">
++                    <TableHeader>
+                       <TableRow>
+-                        <TableCell colSpan={10} className="text-center text-muted-foreground">
+-                          没有符合条件的会话
+-                        </TableCell>
++                        <TableHead>会话 ID</TableHead>
++                        <TableHead>项目</TableHead>
++                        <TableHead>标题</TableHead>
++                        <TableHead>来源</TableHead>
++                        <TableHead>模型</TableHead>
++                        <TableHead>提示摘要</TableHead>
++                        <TableHead className="text-right">详情</TableHead>
+                       </TableRow>
+-                    )}
+-                  </TableBody>
+-                </Table>
++                    </TableHeader>
++                    <TableBody>
++                      {pageRows.length ? (
++                        pageRows.map((thread) => (
++                          <TableRow key={thread.id}>
++                            <TableCell className="mono max-w-[180px] break-all text-xs text-muted-foreground">{thread.id}</TableCell>
++                            <TableCell>{thread.workspaceLabel || thread.cwd || "-"}</TableCell>
++                            <TableCell className="min-w-[220px]">
++                              <div className="line-clamp-2 font-semibold">{thread.titlePreview || thread.title || "(untitled)"}</div>
++                            </TableCell>
++                            <TableCell><Badge variant={originBadgeVariant(thread.usageOrigin)}>{thread.usageOriginLabel || "Codex 本地"}</Badge></TableCell>
++                            <TableCell>{formatModelLabel(thread.modelName)}</TableCell>
++                            <TableCell className="min-w-[260px] text-muted-foreground">{summarizePromptText(thread.promptText || "", 96) || "-"}</TableCell>
++                            <TableCell className="text-right">
++                              <Button variant="outline" size="sm" onClick={() => setSelectedThreadId(thread.id)}>详情</Button>
++                            </TableCell>
++                          </TableRow>
++                        ))
++                      ) : (
++                        <TableRow>
++                          <TableCell colSpan={7} className="text-center text-muted-foreground">没有符合条件的会话</TableCell>
++                        </TableRow>
++                      )}
++                    </TableBody>
++                  </Table>
++                ) : null}
+               </ScrollArea>
+             </div>
+ 
+@@ -954,42 +2384,12 @@ function CodexDashboard({
+                   <TabsTrigger value="month">自然月</TabsTrigger>
+                 </TabsList>
+               </Tabs>
+-
+-              <div className="flex flex-wrap gap-2">
+-                {[
+-                  ["7", 7],
+-                  ["30", 30],
+-                  ["本月", "month"],
+-                  ["全部", "all"],
+-                ].map(([label, preset]) => (
+-                  <Button
+-                    key={label}
+-                    variant="outline"
+-                    size="sm"
+-                    onClick={() => {
+-                      if (!scopeRows.length) {
+-                        return;
+-                      }
+-
+-                      const total = scopeRows.length - 1;
+-                      if (preset === "all" || preset === "month") {
+-                        setRange({ start: 0, end: total });
+-                        return;
+-                      }
+-
+-                      const count = Number(preset);
+-                      setRange({ start: Math.max(0, total - count + 1), end: total });
+-                    }}
+-                  >
+-                    {label}
+-                  </Button>
+-                ))}
+-              </div>
++              <p className="text-sm text-muted-foreground">当前预设：{formatDateRangeLabel(activeDateRange)}</p>
+             </div>
+ 
+             <div className="mt-4 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+-              <MetricTile label={`${billingScope === "month" ? "自然月" : "累计"}费用`} value={formatUsd(scopeSummary.totalUsd)} subvalue="当前统计范围" compact tone="muted" />
+-              <MetricTile label={`${billingScope === "month" ? "自然月" : "累计"} Token`} value={formatTokenMillions(scopeSummary.totalTokens)} subvalue="当前统计范围" compact />
++              <MetricTile label={`${billingScope === "month" ? "自然月" : "累计"}费用`} value={formatUsd(scopeSummary.totalUsd)} subvalue="快速筛选后的统计范围" compact tone="muted" />
++              <MetricTile label={`${billingScope === "month" ? "自然月" : "累计"} Token`} value={formatTokenMillions(scopeSummary.totalTokens)} subvalue="快速筛选后的统计范围" compact />
+               <MetricTile label="当前范围费用" value={formatUsd(visibleSummary.totalUsd)} subvalue={`${visibleLedgerRows.length} 天明细`} compact />
+               <MetricTile label="当前范围 Token" value={formatTokenMillions(visibleSummary.totalTokens)} subvalue={`${visibleLedgerRows[visibleLedgerRows.length - 1]?.day || "-"} -> ${visibleLedgerRows[0]?.day || "-"}`} compact />
+             </div>
+@@ -1000,17 +2400,15 @@ function CodexDashboard({
+                 <div className="flex items-center justify-between gap-4 text-sm text-muted-foreground">
+                   <span>时间范围</span>
+                   <strong className="mono text-foreground">
+-                    {`${visibleLedgerRows[visibleLedgerRows.length - 1]?.day || "-"} -> ${
+-                      visibleLedgerRows[0]?.day || "-"
+-                    }`}
++                    {`${visibleLedgerRows[visibleLedgerRows.length - 1]?.day || "-"} -> ${visibleLedgerRows[0]?.day || "-"}`}
+                   </strong>
+                 </div>
+                 <Slider
+                   min={0}
+-                  max={Math.max(scopeRows.length - 1, 0)}
++                  max={Math.max(filteredScopeRows.length - 1, 0)}
+                   step={1}
+-                  value={[range.start, range.end ?? Math.max(scopeRows.length - 1, 0)]}
+-                  disabled={!scopeRows.length}
++                  value={[range.start, range.end ?? Math.max(filteredScopeRows.length - 1, 0)]}
++                  disabled={!filteredScopeRows.length}
+                   onValueChange={(values) => {
+                     const [rawStart = 0, rawEnd = 0] = values;
+                     setRange({
+@@ -1021,8 +2419,8 @@ function CodexDashboard({
+                   aria-label="账单时间范围"
+                 />
+                 <div className="flex items-center justify-between text-xs text-muted-foreground">
+-                  <span>{scopeRows[scopeRows.length - 1]?.day || "-"}</span>
+-                  <span>{scopeRows[0]?.day || "-"}</span>
++                  <span>{filteredScopeRows[filteredScopeRows.length - 1]?.day || "-"}</span>
++                  <span>{filteredScopeRows[0]?.day || "-"}</span>
+                 </div>
+               </div>
+ 
+@@ -1052,9 +2450,7 @@ function CodexDashboard({
+                           ))
+                         ) : (
+                           <TableRow>
+-                            <TableCell colSpan={3} className="text-center text-muted-foreground">
+-                              没有账单明细
+-                            </TableCell>
++                            <TableCell colSpan={3} className="text-center text-muted-foreground">没有账单明细</TableCell>
+                           </TableRow>
+                         )}
+                       </TableBody>
+@@ -1072,6 +2468,47 @@ function CodexDashboard({
+   );
+ }
+ 
++function PricingSettingsPage({
++  snapshot,
++  refreshStatus,
++  refreshMessage,
++  onRefreshSnapshot,
++  onBackHome,
++}) {
++  const freshness = resolveFreshnessState(snapshot.generatedAt);
++
++  return (
++    <div className="grid min-w-0 gap-5">
++      <SectionCard
++        title="设置 / 模型价格"
++        description="模型价格表已独立到设置页，首页只保留入口"
++        actions={
++          <div className="flex flex-wrap items-center gap-2 sm:justify-end">
++            <Badge variant={refreshStatusVariant(refreshStatus)}>刷新状态 {refreshStatusLabel(refreshStatus)}</Badge>
++            <Button type="button" size="sm" onClick={onRefreshSnapshot} disabled={refreshStatus === "loading"}>
++              {refreshStatus === "loading" ? "刷新中..." : "刷新数据"}
++            </Button>
++            <Button type="button" size="sm" variant="outline" onClick={onBackHome}>
++              返回首页
++            </Button>
++          </div>
++        }
++      >
++        <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
++          <Badge variant={freshness.variant}>新鲜度 {freshness.label}</Badge>
++          <span>最近更新时间 {new Date(snapshot.generatedAt).toLocaleString("zh-CN")}</span>
++          <span>（{formatRelativeTime(snapshot.generatedAt)}）</span>
++          {refreshMessage ? <span>{refreshMessage}</span> : null}
++        </div>
++      </SectionCard>
++
++      <SectionCard title="模型价格表" description="同价模型自动合并展示">
++        <PricingCatalogTable rows={snapshot.pricingCatalog || []} />
++      </SectionCard>
++    </div>
++  );
++}
++
+ function OpenClawPanel({ snapshot }) {
+   const openclaw = snapshot.openclaw;
+   const leadModel = openclaw?.topModels?.[0] || null;
+@@ -1137,13 +2574,82 @@ function OpenClawPanel({ snapshot }) {
+ 
+ export default function App() {
+   const { snapshot, setSnapshot, connectionLabel, setConnectionLabel } = useDashboardSnapshot();
++  const [currentPage, setCurrentPage] = useState(() => readCurrentPage());
+   const [sourceView, setSourceView] = useState("codex");
+   const [codexHomeInput, setCodexHomeInput] = useState("");
++  const [refreshStatus, setRefreshStatus] = useState("idle");
++  const [refreshMessage, setRefreshMessage] = useState("");
++  const [isAccessGranted, setIsAccessGranted] = useState(() => readAccessState());
++  const [accessPassword, setAccessPassword] = useState("");
++  const [accessError, setAccessError] = useState("");
++  const [alertConfig, setAlertConfig] = useState(() => readAlertConfig());
++  const [alertStates, setAlertStates] = useState(() => readAlertStates());
++  const alertMetrics = useMemo(() => getAlertMetrics(snapshot), [snapshot]);
+ 
+   useEffect(() => {
+     setCodexHomeInput(snapshot.sources?.codexHome || "");
+   }, [snapshot.sources?.codexHome]);
+ 
++  useEffect(() => {
++    if (typeof window === "undefined") {
++      return undefined;
++    }
++
++    const syncPage = () => setCurrentPage(readCurrentPage());
++    window.addEventListener("popstate", syncPage);
++    return () => window.removeEventListener("popstate", syncPage);
++  }, []);
++
++  useEffect(() => {
++    persistAlertConfig(alertConfig);
++  }, [alertConfig]);
++
++  useEffect(() => {
++    setAlertStates((current) => {
++      const next = evaluateAlertStates({
++        metrics: alertMetrics,
++        config: alertConfig,
++        previousStates: current,
++        timestamp: snapshot.generatedAt,
++      });
++
++      if (JSON.stringify(current) === JSON.stringify(next)) {
++        return current;
++      }
++
++      persistAlertStates(next);
++      return next;
++    });
++  }, [alertConfig, alertMetrics, snapshot.generatedAt]);
++
++  function handleAccessSubmit(event) {
++    event.preventDefault();
++
++    if (accessPassword === ACCESS_PASSWORD) {
++      persistAccessState(true);
++      setIsAccessGranted(true);
++      setAccessPassword("");
++      setAccessError("");
++      return;
++    }
++
++    setAccessError("密码错误，请重试。");
++  }
++
++  function handleRelock() {
++    persistAccessState(false);
++    setIsAccessGranted(false);
++    setAccessPassword("");
++    setAccessError("");
++  }
++
++  function navigateTo(route) {
++    if (typeof window !== "undefined" && window.location.pathname !== route) {
++      window.history.pushState({}, "", route);
++    }
++    setCurrentPage(readCurrentPage());
++  }
++
+   async function updateSource(nextCodexHome) {
+     const response = await fetch("/api/source", {
+       method: "POST",
+@@ -1164,8 +2670,64 @@ export default function App() {
+     setConnectionLabel("实时中");
+   }
+ 
++  async function handleRefreshSnapshot() {
++    setRefreshStatus("loading");
++    setRefreshMessage("");
++
++    try {
++      const response = await fetch("/api/refresh", {
++        method: "POST",
++      });
++      const payload = await response.json();
++      if (!response.ok) {
++        throw new Error(payload.error || "刷新失败");
++      }
++
++      setSnapshot(payload);
++      setConnectionLabel("实时中");
++      setRefreshStatus("success");
++      setRefreshMessage(`最近刷新 ${new Date(payload.generatedAt).toLocaleString("zh-CN")}`);
++    } catch (error) {
++      setRefreshStatus("error");
++      setRefreshMessage(error instanceof Error ? error.message : "刷新失败");
++    }
++  }
++
++  function handleAlertRuleChange(ruleKey, updates) {
++    setAlertConfig((current) =>
++      normalizeAlertConfig({
++        ...current,
++        [ruleKey]: {
++          ...current[ruleKey],
++          ...updates,
++        },
++      })
++    );
++  }
++
++  if (!isAccessGranted) {
++    return (
++      <AccessGate
++        password={accessPassword}
++        errorMessage={accessError}
++        onPasswordChange={(value) => {
++          setAccessPassword(value);
++          if (accessError) {
++            setAccessError("");
++          }
++        }}
++        onSubmit={handleAccessSubmit}
++      />
++    );
++  }
++
+   return (
+     <div className="mx-auto max-w-[1520px] space-y-4 px-3.5 py-4 sm:px-4 sm:py-6 md:px-6 lg:space-y-6 lg:px-8 lg:py-8">
++      <div className="flex justify-end">
++        <Button type="button" variant="outline" size="sm" onClick={handleRelock}>
++          重新锁定
++        </Button>
++      </div>
+       <PageHeader
+         connectionLabel={connectionLabel}
+         connectionVariant={connectionBadgeVariant(connectionLabel)}
+@@ -1174,31 +2736,51 @@ export default function App() {
+ 
+       <Separator />
+ 
+-      <div className="lg:hidden">
+-        <Tabs value={sourceView} onValueChange={setSourceView}>
+-          <TabsList className="grid h-auto w-full grid-cols-2">
+-            <TabsTrigger value="codex" className="text-xs sm:text-sm">Codex 本地</TabsTrigger>
+-            <TabsTrigger value="openclaw" className="text-xs sm:text-sm">OpenClaw / OAuth</TabsTrigger>
+-          </TabsList>
+-        </Tabs>
+-      </div>
++      {currentPage === "pricing" ? (
++        <PricingSettingsPage
++          snapshot={snapshot}
++          refreshStatus={refreshStatus}
++          refreshMessage={refreshMessage}
++          onRefreshSnapshot={handleRefreshSnapshot}
++          onBackHome={() => navigateTo(APP_ROUTES.home)}
++        />
++      ) : (
++        <>
++          <div className="lg:hidden">
++            <Tabs value={sourceView} onValueChange={setSourceView}>
++              <TabsList className="grid h-auto w-full grid-cols-2">
++                <TabsTrigger value="codex" className="text-xs sm:text-sm">Codex 本地</TabsTrigger>
++                <TabsTrigger value="openclaw" className="text-xs sm:text-sm">OpenClaw / OAuth</TabsTrigger>
++              </TabsList>
++            </Tabs>
++          </div>
+ 
+-      <div className="grid min-w-0 gap-6 lg:grid-cols-[minmax(0,1.55fr)_minmax(320px,0.95fr)]">
+-        <div className={cn(sourceView === "codex" ? "block" : "hidden", "min-w-0 space-y-6 lg:block")}>
+-          <CodexDashboard
+-            snapshot={snapshot}
+-            connectionLabel={connectionLabel}
+-            codexHomeInput={codexHomeInput}
+-            onCodexHomeInputChange={setCodexHomeInput}
+-            onApplySource={() => updateSource(codexHomeInput.trim())}
+-            onResetSource={() => updateSource("").then(() => setCodexHomeInput(""))}
+-          />
+-        </div>
++          <div className="grid min-w-0 gap-6 lg:grid-cols-[minmax(0,1.55fr)_minmax(320px,0.95fr)]">
++            <div className={cn(sourceView === "codex" ? "block" : "hidden", "min-w-0 space-y-6 lg:block")}>
++              <CodexDashboard
++                snapshot={snapshot}
++                connectionLabel={connectionLabel}
++                codexHomeInput={codexHomeInput}
++                onCodexHomeInputChange={setCodexHomeInput}
++                onApplySource={() => updateSource(codexHomeInput.trim())}
++                onResetSource={() => updateSource("").then(() => setCodexHomeInput(""))}
++                onRefreshSnapshot={handleRefreshSnapshot}
++                refreshStatus={refreshStatus}
++                refreshMessage={refreshMessage}
++                onOpenPricing={() => navigateTo(APP_ROUTES.pricing)}
++                alertConfig={alertConfig}
++                alertMetrics={alertMetrics}
++                alertStates={alertStates}
++                onAlertRuleChange={handleAlertRuleChange}
++              />
++            </div>
+ 
+-        <div className={cn(sourceView === "openclaw" ? "block" : "hidden", "min-w-0 lg:block")}>
+-          <OpenClawPanel snapshot={snapshot} />
+-        </div>
+-      </div>
++            <div className={cn(sourceView === "openclaw" ? "block" : "hidden", "min-w-0 lg:block")}>
++              <OpenClawPanel snapshot={snapshot} />
++            </div>
++          </div>
++        </>
++      )}
+     </div>
+   );
+ }
+diff --git a/src/lib/dashboard-logic.mjs b/src/lib/dashboard-logic.mjs
+index f8c9999..b35aa39 100644
+--- a/src/lib/dashboard-logic.mjs
++++ b/src/lib/dashboard-logic.mjs
+@@ -95,6 +95,37 @@ export function formatUsageSource(value) {
+   return String(value);
+ }
+ 
++export function formatRelativeTime(value, now = Date.now()) {
++  if (!value) {
++    return "时间未知";
++  }
++
++  const targetMs = new Date(value).getTime();
++  const nowMs = new Date(now).getTime();
++
++  if (Number.isNaN(targetMs) || Number.isNaN(nowMs)) {
++    return "时间未知";
++  }
++
++  const diffMs = Math.max(0, nowMs - targetMs);
++  const diffMinutes = Math.floor(diffMs / 60000);
++
++  if (diffMinutes <= 0) {
++    return "刚刚";
++  }
++
++  if (diffMinutes < 60) {
++    return `${diffMinutes} 分钟前`;
++  }
++
++  const diffHours = Math.floor(diffMinutes / 60);
++  if (diffHours < 24) {
++    return `${diffHours} 小时前`;
++  }
++
++  return `${Math.floor(diffHours / 24)} 天前`;
++}
++
+ export function normalizeInlineText(value) {
+   return String(value || "").replace(/\s+/g, " ").trim();
+ }
+@@ -181,6 +212,103 @@ export function summarizeLedgerRows(rows) {
+   );
+ }
+ 
++export function getHomepageSummary(rows, generatedAt = Date.now()) {
++  const currentDay = formatDayKey(new Date(generatedAt || Date.now()));
++  const previousDay = formatDayKey(addDays(new Date(generatedAt || Date.now()), -1));
++  const todayRow = (rows || []).find((row) => row.day === currentDay) || {};
++  const previousRow = (rows || []).find((row) => row.day === previousDay) || {};
++  const monthSummary = summarizeLedgerRows(getScopeRows(rows || [], generatedAt, "month"));
++  const deltaUsd = Number(
++    (
++      Number(todayRow.totalUsd || 0) -
++      Number(previousRow.totalUsd || 0)
++    ).toFixed(2)
++  );
++
++  return {
++    today: {
++      day: currentDay,
++      totalUsd: Number(todayRow.totalUsd || 0),
++      totalTokens: Number(todayRow.totalTokens || 0),
++    },
++    yesterday: {
++      day: previousDay,
++      totalUsd: Number(previousRow.totalUsd || 0),
++      totalTokens: Number(previousRow.totalTokens || 0),
++    },
++    month: {
++      totalUsd: Number(Number(monthSummary.totalUsd || 0).toFixed(2)),
++      totalTokens: Number(monthSummary.totalTokens || 0),
++    },
++    change: {
++      direction: deltaUsd > 0 ? "up" : deltaUsd < 0 ? "down" : "flat",
++      deltaUsd,
++      deltaTokens: Number(todayRow.totalTokens || 0) - Number(previousRow.totalTokens || 0),
++    },
++  };
++}
++
++function average(values) {
++  if (!values.length) {
++    return 0;
++  }
++
++  return values.reduce((sum, value) => sum + Number(value || 0), 0) / values.length;
++}
++
++function buildCostSpikeEntries(rows, scope, getLabel) {
++  const groups = new Map();
++
++  for (const row of (rows || []).sort((left, right) => Number(right.updatedAt || 0) - Number(left.updatedAt || 0))) {
++    const latestUsd = Number(row?.cost?.totalUsd || 0);
++    const label = String(getLabel(row) || "").trim();
++    if (!label || label === "-" || latestUsd <= 0) {
++      continue;
++    }
++
++    if (!groups.has(label)) {
++      groups.set(label, []);
++    }
++
++    groups.get(label).push(row);
++  }
++
++  return Array.from(groups.entries())
++    .map(([label, groupRows]) => {
++      const [latest, ...history] = groupRows;
++      const baselineRows = history.slice(0, 3);
++      const latestUsd = Number(latest?.cost?.totalUsd || 0);
++      const baselineUsd = Number(average(baselineRows.map((row) => row?.cost?.totalUsd || 0)).toFixed(2));
++      const deltaUsd = Number((latestUsd - baselineUsd).toFixed(2));
++      const ratio = baselineUsd > 0 ? latestUsd / baselineUsd : Infinity;
++
++      if (!baselineRows.length || latestUsd < 1 || deltaUsd < 1) {
++        return null;
++      }
++
++      if (baselineUsd > 0 && ratio < 2.5) {
++        return null;
++      }
++
++      return {
++        scope,
++        label,
++        latestUsd,
++        baselineUsd,
++        deltaUsd,
++        ratio: Number.isFinite(ratio) ? Number(ratio.toFixed(2)) : null,
++      };
++    })
++    .filter(Boolean);
++}
++
++export function detectCostSpikes(rows) {
++  return [
++    ...buildCostSpikeEntries(rows, "project", (row) => row.workspaceLabel || row.cwd),
++    ...buildCostSpikeEntries(rows, "model", (row) => row.modelName),
++  ].sort((left, right) => right.deltaUsd - left.deltaUsd);
++}
++
+ export function getLocalDateKeyFromUnixSeconds(unixSeconds) {
+   if (!unixSeconds) {
+     return "";
+@@ -198,6 +326,106 @@ export function getLocalDateKeyFromUnixSeconds(unixSeconds) {
+   return `${values.year}-${values.month}-${values.day}`;
+ }
+ 
++function isValidDayKey(value) {
++  return /^\d{4}-\d{2}-\d{2}$/.test(String(value || ""));
++}
++
++function formatDayKey(date) {
++  if (!(date instanceof Date) || Number.isNaN(date.getTime())) {
++    return "";
++  }
++
++  const year = date.getFullYear();
++  const month = String(date.getMonth() + 1).padStart(2, "0");
++  const day = String(date.getDate()).padStart(2, "0");
++  return `${year}-${month}-${day}`;
++}
++
++function addDays(referenceDate, amount) {
++  return new Date(
++    referenceDate.getFullYear(),
++    referenceDate.getMonth(),
++    referenceDate.getDate() + Number(amount || 0)
++  );
++}
++
++export function getDatePresetRange(referenceDate, preset, customRange = {}) {
++  const baseDate = new Date(referenceDate || Date.now());
++  const safePreset = String(preset || "custom");
++  const referenceDay = formatDayKey(baseDate);
++
++  if (!referenceDay) {
++    return {
++      preset: safePreset,
++      startDay: "",
++      endDay: "",
++    };
++  }
++
++  if (safePreset === "today") {
++    return { preset: safePreset, startDay: referenceDay, endDay: referenceDay };
++  }
++
++  if (safePreset === "yesterday") {
++    const yesterday = formatDayKey(addDays(baseDate, -1));
++    return { preset: safePreset, startDay: yesterday, endDay: yesterday };
++  }
++
++  if (safePreset === "last7") {
++    return {
++      preset: safePreset,
++      startDay: formatDayKey(addDays(baseDate, -6)),
++      endDay: referenceDay,
++    };
++  }
++
++  if (safePreset === "month") {
++    return {
++      preset: safePreset,
++      startDay: formatDayKey(new Date(baseDate.getFullYear(), baseDate.getMonth(), 1)),
++      endDay: referenceDay,
++    };
++  }
++
++  const startDay = isValidDayKey(customRange.startDay) ? customRange.startDay : "";
++  const endDay = isValidDayKey(customRange.endDay) ? customRange.endDay : "";
++  if (startDay && endDay && startDay > endDay) {
++    return {
++      preset: safePreset,
++      startDay: endDay,
++      endDay: startDay,
++    };
++  }
++
++  return {
++    preset: safePreset,
++    startDay,
++    endDay,
++  };
++}
++
++export function filterRowsByDayRange(rows, startDay, endDay, dayAccessor = (row) => row?.day) {
++  const start = isValidDayKey(startDay) ? startDay : "";
++  const end = isValidDayKey(endDay) ? endDay : "";
++
++  return (rows || []).filter((row) => {
++    const day = String(dayAccessor(row) || "");
++    if (!day) {
++      return false;
++    }
++
++    if (start && day < start) {
++      return false;
++    }
++
++    if (end && day > end) {
++      return false;
++    }
++
++    return true;
++  });
++}
++
+ export function getSessionPageCount(rows, pageSize = 10) {
+   return Math.max(1, Math.ceil((rows || []).length / pageSize));
+ }
+@@ -212,16 +440,27 @@ export function getFilteredSessionRows(rows, filters = {}) {
+   const titleQuery = String(filters.title || "").trim().toLowerCase();
+   const modelQuery = String(filters.model || "").trim().toLowerCase();
+   const createdDate = String(filters.createdDate || "").trim();
++  const createdFrom = String(filters.createdFrom || "").trim();
++  const createdTo = String(filters.createdTo || "").trim();
+   const origin = String(filters.origin || "").trim();
+ 
+   return (rows || []).filter((row) => {
++    const createdDay = getLocalDateKeyFromUnixSeconds(row.createdAt);
+     const matchesTitle = !titleQuery || String(row.title || "").toLowerCase().includes(titleQuery);
+     const matchesModel = !modelQuery || String(row.modelName || "").toLowerCase().includes(modelQuery);
+-    const matchesCreatedDate =
+-      !createdDate || getLocalDateKeyFromUnixSeconds(row.createdAt) === createdDate;
++    const matchesCreatedDate = !createdDate || createdDay === createdDate;
++    const matchesCreatedFrom = !createdFrom || createdDay >= createdFrom;
++    const matchesCreatedTo = !createdTo || createdDay <= createdTo;
+     const matchesOrigin = !origin || String(row.usageOrigin || "") === origin;
+ 
+-    return matchesTitle && matchesModel && matchesCreatedDate && matchesOrigin;
++    return (
++      matchesTitle &&
++      matchesModel &&
++      matchesCreatedDate &&
++      matchesCreatedFrom &&
++      matchesCreatedTo &&
++      matchesOrigin
++    );
+   });
+ }
+ 
+@@ -367,3 +606,216 @@ export function buildOpenClawModelTableMarkup(rows) {
+     </table>
+   `;
+ }
++
++function getSessionExportDefinition(viewMode) {
++  const safeViewMode = String(viewMode || "cost");
++
++  if (safeViewMode === "performance") {
++    return [
++      { header: "会话 ID", value: (row) => row.id || "" },
++      { header: "标题", value: (row) => row.titlePreview || row.title || "" },
++      { header: "状态", value: (row) => row.statusLabel || "未知" },
++      { header: "模型", value: (row) => formatModelLabel(row.modelName) },
++      { header: "创建时间", value: (row) => formatResetTime(row.createdAt) },
++      { header: "更新时间", value: (row) => formatResetTime(row.updatedAt) },
++    ];
++  }
++
++  if (safeViewMode === "project") {
++    return [
++      { header: "会话 ID", value: (row) => row.id || "" },
++      { header: "标题", value: (row) => row.titlePreview || row.title || "" },
++      { header: "项目", value: (row) => row.workspaceLabel || row.cwd || "-" },
++      { header: "来源", value: (row) => row.usageOriginLabel || "Codex 本地" },
++      { header: "模型", value: (row) => formatModelLabel(row.modelName) },
++      { header: "提示摘要", value: (row) => summarizePromptText(row.promptText || "", 80) },
++    ];
++  }
++
++  return [
++    { header: "会话 ID", value: (row) => row.id || "" },
++    { header: "标题", value: (row) => row.titlePreview || row.title || "" },
++    { header: "来源", value: (row) => row.usageOriginLabel || "Codex 本地" },
++    { header: "模型", value: (row) => formatModelLabel(row.modelName) },
++    { header: "Token", value: (row) => formatTokenMillions(row.tokensUsed) },
++    { header: "费用", value: (row) => (row.cost ? formatUsd(row.cost.totalUsd) : "-") },
++    { header: "更新时间", value: (row) => formatResetTime(row.updatedAt) },
++  ];
++}
++
++export function buildSessionExportSnapshot(rows, viewMode) {
++  const definition = getSessionExportDefinition(viewMode);
++  return {
++    columns: definition.map((column) => column.header),
++    rows: (rows || []).map((row) => definition.map((column) => column.value(row))),
++  };
++}
++
++export function buildBillingExportSnapshot(rows) {
++  return {
++    columns: ["日期", "Token", "费用"],
++    rows: (rows || []).map((row) => [
++      row.day || "",
++      formatTokenMillions(row.totalTokens),
++      formatUsd(row.totalUsd),
++    ]),
++  };
++}
++
++export function stringifyCsvSnapshot(snapshot) {
++  const columns = Array.isArray(snapshot?.columns) ? snapshot.columns : [];
++  const rows = Array.isArray(snapshot?.rows) ? snapshot.rows : [];
++
++  const escapeCell = (value) => {
++    const cell = String(value ?? "");
++    if (/[",\n]/.test(cell)) {
++      return `"${cell.replaceAll('"', '""')}"`;
++    }
++
++    return cell;
++  };
++
++  return [columns, ...rows]
++    .map((row) => row.map((cell) => escapeCell(cell)).join(","))
++    .join("\n");
++}
++
++export const ALERT_CONFIG_LIMITS = {
++  dailySpend: {
++    minThresholdUsd: 0,
++    maxThresholdUsd: 100000,
++    defaultThresholdUsd: 10,
++  },
++  failureRate: {
++    minThresholdPercent: 0,
++    maxThresholdPercent: 100,
++    defaultThresholdPercent: 20,
++  },
++};
++
++const DEFAULT_ALERT_CONFIG = {
++  dailySpend: {
++    enabled: true,
++    thresholdUsd: ALERT_CONFIG_LIMITS.dailySpend.defaultThresholdUsd,
++  },
++  failureRate: {
++    enabled: true,
++    thresholdPercent: ALERT_CONFIG_LIMITS.failureRate.defaultThresholdPercent,
++  },
++};
++
++export function normalizeAlertConfig(config = {}) {
++  const dailySpendThreshold = Number(config.dailySpend?.thresholdUsd);
++  const failureRateThreshold = Number(config.failureRate?.thresholdPercent);
++
++  return {
++    dailySpend: {
++      enabled: config.dailySpend?.enabled !== false,
++      thresholdUsd: Number.isFinite(dailySpendThreshold)
++        ? Math.max(
++            ALERT_CONFIG_LIMITS.dailySpend.minThresholdUsd,
++            Math.min(ALERT_CONFIG_LIMITS.dailySpend.maxThresholdUsd, dailySpendThreshold)
++          )
++        : DEFAULT_ALERT_CONFIG.dailySpend.thresholdUsd,
++    },
++    failureRate: {
++      enabled: config.failureRate?.enabled !== false,
++      thresholdPercent: Number.isFinite(failureRateThreshold)
++        ? Math.max(
++            ALERT_CONFIG_LIMITS.failureRate.minThresholdPercent,
++            Math.min(ALERT_CONFIG_LIMITS.failureRate.maxThresholdPercent, failureRateThreshold)
++          )
++        : DEFAULT_ALERT_CONFIG.failureRate.thresholdPercent,
++    },
++  };
++}
++
++export function getAlertMetrics(snapshot = {}) {
++  const today = formatDayKey(new Date(snapshot.generatedAt || Date.now()));
++  const todayLedger = (snapshot.dailyLedger || []).find((row) => row.day === today);
++  const todayThreads = (snapshot.recentThreads || []).filter(
++    (row) => getLocalDateKeyFromUnixSeconds(row.createdAt) === today
++  );
++  const terminalThreads = todayThreads.filter(
++    (row) => row.statusLabel === "已完结" || row.statusLabel === "已中断"
++  );
++  const failureCount = terminalThreads.filter((row) => row.statusLabel === "已中断").length;
++  const completedCount = terminalThreads.filter((row) => row.statusLabel === "已完结").length;
++  const terminalCount = terminalThreads.length;
++
++  return {
++    todayKey: today,
++    dailySpendUsd: Number(todayLedger?.totalUsd || 0),
++    dailySpendTokens: Number(todayLedger?.totalTokens || 0),
++    failureRatePercent: terminalCount
++      ? Number(((failureCount / terminalCount) * 100).toFixed(1))
++      : 0,
++    failureCount,
++    completedCount,
++    terminalCount,
++    sessionCountToday: todayThreads.length,
++  };
++}
++
++export function evaluateAlertStates({ metrics = {}, config = {}, previousStates = {}, timestamp } = {}) {
++  const normalizedConfig = normalizeAlertConfig(config);
++  const rules = {
++    dailySpend: {
++      enabled: normalizedConfig.dailySpend.enabled,
++      threshold: Number(normalizedConfig.dailySpend.thresholdUsd || 0),
++      value: Number(metrics.dailySpendUsd || 0),
++    },
++    failureRate: {
++      enabled: normalizedConfig.failureRate.enabled,
++      threshold: Number(normalizedConfig.failureRate.thresholdPercent || 0),
++      value: Number(metrics.failureRatePercent || 0),
++    },
++  };
++
++  return Object.fromEntries(
++    Object.entries(rules).map(([key, rule]) => {
++      const previous = previousStates[key] || { phase: "inactive", isActive: false };
++      const changedAt = timestamp || previous.changedAt || null;
++
++      if (!rule.enabled) {
++        const stillDisabled = previous.phase === "disabled";
++        return [
++          key,
++          {
++            phase: "disabled",
++            isActive: false,
++            threshold: rule.threshold,
++            currentValue: rule.value,
++            changedAt: stillDisabled ? previous.changedAt || changedAt : changedAt,
++          },
++        ];
++      }
++
++      if (rule.value >= rule.threshold) {
++        return [
++          key,
++          {
++            phase: "triggered",
++            isActive: true,
++            threshold: rule.threshold,
++            currentValue: rule.value,
++            changedAt: previous.phase === "triggered" ? previous.changedAt || changedAt : changedAt,
++          },
++        ];
++      }
++
++      const wasActive = previous.phase === "triggered" || previous.isActive;
++      const recovered = wasActive || previous.phase === "recovered";
++      return [
++        key,
++        {
++          phase: recovered ? "recovered" : "inactive",
++          isActive: false,
++          threshold: rule.threshold,
++          currentValue: rule.value,
++          changedAt: wasActive ? changedAt : previous.changedAt || null,
++        },
++      ];
++    })
++  );
++}
+diff --git a/test/app.test.js b/test/app.test.js
+index 8e43f74..abed62d 100644
+--- a/test/app.test.js
++++ b/test/app.test.js
+@@ -109,7 +109,7 @@ function createAlternateCodexHome() {
+   return codexHome;
+ }
+ 
+-test("snapshot endpoint returns normalized JSON and stream endpoint exposes SSE", async () => {
++test("snapshot endpoint returns normalized JSON and stream endpoint exposes SSE", async (t) => {
+   const codexHome = createFixtureCodexHome();
+   const alternateCodexHome = createAlternateCodexHome();
+   const server = createAppServer({
+@@ -140,7 +140,29 @@ test("snapshot endpoint returns normalized JSON and stream endpoint exposes SSE"
+     }),
+   });
+ 
+-  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
++  const listenError = await new Promise((resolve) => {
++    const handleError = (error) => {
++      server.off("listening", handleListening);
++      resolve(error);
++    };
++    const handleListening = () => {
++      server.off("error", handleError);
++      resolve(null);
++    };
++
++    server.once("error", handleError);
++    server.once("listening", handleListening);
++    server.listen(0, "127.0.0.1");
++  });
++
++  if (listenError?.code === "EPERM") {
++    t.skip("sandbox blocks binding local test port (listen EPERM)");
++    return;
++  }
++
++  if (listenError) {
++    throw listenError;
++  }
+   const { port } = server.address();
+ 
+   try {
+@@ -166,6 +188,12 @@ test("snapshot endpoint returns normalized JSON and stream endpoint exposes SSE"
+     const assetMatch = pageHtml.match(/src="(\/assets\/[^"]+\.js)"/);
+     assert.ok(assetMatch);
+ 
++    const pricingPageResponse = await fetch(`http://127.0.0.1:${port}/settings/pricing`);
++    assert.equal(pricingPageResponse.status, 200);
++    assert.match(pricingPageResponse.headers.get("content-type"), /text\/html/);
++    const pricingPageHtml = await pricingPageResponse.text();
++    assert.match(pricingPageHtml, /<div id="root"><\/div>/);
++
+     const assetResponse = await fetch(`http://127.0.0.1:${port}${assetMatch[1]}`);
+     assert.equal(assetResponse.status, 200);
+     assert.match(assetResponse.headers.get("content-type"), /application\/javascript/);
+@@ -176,12 +204,26 @@ test("snapshot endpoint returns normalized JSON and stream endpoint exposes SSE"
+     assert.equal(headPageResponse.status, 200);
+     assert.match(headPageResponse.headers.get("content-type"), /text\/html/);
+ 
++    const headPricingPageResponse = await fetch(`http://127.0.0.1:${port}/settings/pricing`, {
++      method: "HEAD",
++    });
++    assert.equal(headPricingPageResponse.status, 200);
++    assert.match(headPricingPageResponse.headers.get("content-type"), /text\/html/);
++
+     const headSnapshotResponse = await fetch(`http://127.0.0.1:${port}/api/snapshot`, {
+       method: "HEAD",
+     });
+     assert.equal(headSnapshotResponse.status, 200);
+     assert.match(headSnapshotResponse.headers.get("content-type"), /application\/json/);
+ 
++    const refreshResponse = await fetch(`http://127.0.0.1:${port}/api/refresh`, {
++      method: "POST",
++    });
++    assert.equal(refreshResponse.status, 200);
++    const refreshedSnapshot = await refreshResponse.json();
++    assert.equal(typeof refreshedSnapshot.generatedAt, "string");
++    assert.equal(typeof refreshedSnapshot.overview.totalTokens, "number");
++
+     const updateResponse = await fetch(`http://127.0.0.1:${port}/api/source`, {
+       method: "POST",
+       headers: {
+diff --git a/test/dashboardView.test.js b/test/dashboardView.test.js
+index 348dfb5..9d2ba3f 100644
+--- a/test/dashboardView.test.js
++++ b/test/dashboardView.test.js
+@@ -28,6 +28,21 @@ test("dashboard formatters render readable token and quota values", () => {
+   );
+ });
+ 
++test("relative freshness labels stay compact and readable", () => {
++  assert.equal(
++    logic.formatRelativeTime("2026-03-13T01:55:00.000Z", "2026-03-13T02:00:00.000Z"),
++    "5 分钟前"
++  );
++  assert.equal(
++    logic.formatRelativeTime("2026-03-13T01:59:40.000Z", "2026-03-13T02:00:00.000Z"),
++    "刚刚"
++  );
++  assert.equal(
++    logic.formatRelativeTime("2026-03-12T02:00:00.000Z", "2026-03-13T02:00:00.000Z"),
++    "1 天前"
++  );
++});
++
+ test("combined chart markup includes hover targets for token and cost values", () => {
+   const markup = logic.buildCombinedChartMarkup([
+     { day: "2026-03-07", totalTokens: 1500000, totalUsd: 2.4 },
+@@ -96,6 +111,68 @@ test("billing scope and range helpers support natural month and visible slices",
+   assert.equal(summary.totalUsd, 18);
+ });
+ 
++test("homepage summary highlights today's spend, monthly spend, and 24h change", () => {
++  const summary = logic.getHomepageSummary(
++    [
++      { day: "2026-03-13", totalTokens: 2200000, totalUsd: 12.8 },
++      { day: "2026-03-12", totalTokens: 1500000, totalUsd: 7.4 },
++      { day: "2026-03-01", totalTokens: 900000, totalUsd: 4.2 },
++      { day: "2026-02-28", totalTokens: 400000, totalUsd: 1.1 },
++    ],
++    "2026-03-13T12:00:00.000Z"
++  );
++
++  assert.equal(summary.today.totalUsd, 12.8);
++  assert.equal(summary.today.totalTokens, 2200000);
++  assert.equal(summary.month.totalUsd, 24.4);
++  assert.equal(summary.month.totalTokens, 4600000);
++  assert.equal(summary.change.direction, "up");
++  assert.equal(summary.change.deltaUsd, 5.4);
++  assert.equal(summary.change.deltaTokens, 700000);
++});
++
++test("cost spike detection surfaces model and project anomalies with baseline context", () => {
++  const anomalies = logic.detectCostSpikes([
++    {
++      id: "thread-1",
++      updatedAt: 1773943200,
++      modelName: "gpt-5.4",
++      workspaceLabel: "alpha",
++      cost: { totalUsd: 6.8 },
++    },
++    {
++      id: "thread-2",
++      updatedAt: 1773939600,
++      modelName: "gpt-5.4",
++      workspaceLabel: "alpha",
++      cost: { totalUsd: 1.6 },
++    },
++    {
++      id: "thread-3",
++      updatedAt: 1773936000,
++      modelName: "gpt-5.4",
++      workspaceLabel: "beta",
++      cost: { totalUsd: 1.9 },
++    },
++    {
++      id: "thread-4",
++      updatedAt: 1773932400,
++      modelName: "gpt-5.4",
++      workspaceLabel: "alpha",
++      cost: { totalUsd: 1.4 },
++    },
++  ]);
++
++  assert.equal(anomalies.length, 2);
++  assert.deepEqual(
++    anomalies.map((item) => item.scope),
++    ["project", "model"]
++  );
++  assert.equal(anomalies[0].label, "alpha");
++  assert.equal(anomalies[0].latestUsd, 6.8);
++  assert.ok(anomalies[0].baselineUsd < anomalies[0].latestUsd);
++});
++
+ test("session pagination returns 10 rows per page and computes total pages", () => {
+   const rows = Array.from({ length: 23 }, (_, index) => ({ id: `thread-${index + 1}` }));
+ 
+@@ -144,6 +221,107 @@ test("session filters can distinguish codex local rows from openclaw oauth rows"
+   assert.deepEqual(filtered.map((row) => row.id), ["thread-2"]);
+ });
+ 
++test("quick date presets resolve stable local ranges and support custom overrides", () => {
++  assert.deepEqual(
++    logic.getDatePresetRange("2026-03-13T09:46:00+08:00", "today"),
++    { preset: "today", startDay: "2026-03-13", endDay: "2026-03-13" }
++  );
++
++  assert.deepEqual(
++    logic.getDatePresetRange("2026-03-13T09:46:00+08:00", "yesterday"),
++    { preset: "yesterday", startDay: "2026-03-12", endDay: "2026-03-12" }
++  );
++
++  assert.deepEqual(
++    logic.getDatePresetRange("2026-03-13T09:46:00+08:00", "last7"),
++    { preset: "last7", startDay: "2026-03-07", endDay: "2026-03-13" }
++  );
++
++  assert.deepEqual(
++    logic.getDatePresetRange("2026-03-13T09:46:00+08:00", "month"),
++    { preset: "month", startDay: "2026-03-01", endDay: "2026-03-13" }
++  );
++
++  assert.deepEqual(
++    logic.getDatePresetRange("2026-03-13T09:46:00+08:00", "custom", {
++      startDay: "2026-03-05",
++      endDay: "2026-03-09",
++    }),
++    { preset: "custom", startDay: "2026-03-05", endDay: "2026-03-09" }
++  );
++});
++
++test("session filters support created date ranges without breaking exact-date matching", () => {
++  const rows = [
++    {
++      id: "thread-1",
++      title: "today",
++      modelName: "gpt-5.4",
++      createdAt: 1773367200,
++      usageOrigin: "codex-local",
++    },
++    {
++      id: "thread-2",
++      title: "week",
++      modelName: "gpt-5.4",
++      createdAt: 1773021600,
++      usageOrigin: "codex-local",
++    },
++    {
++      id: "thread-3",
++      title: "older",
++      modelName: "gpt-5.4",
++      createdAt: 1772762400,
++      usageOrigin: "codex-local",
++    },
++  ];
++
++  const ranged = logic.getFilteredSessionRows(rows, {
++    createdFrom: "2026-03-09",
++    createdTo: "2026-03-13",
++  });
++  assert.deepEqual(ranged.map((row) => row.id), ["thread-1", "thread-2"]);
++
++  const exact = logic.getFilteredSessionRows(rows, {
++    createdDate: "2026-03-09",
++  });
++  assert.deepEqual(exact.map((row) => row.id), ["thread-2"]);
++});
++
++test("session export snapshot follows the active view columns and csv escaping rules", () => {
++  const rows = [
++    {
++      id: "thread-2",
++      title: "修复, export",
++      titlePreview: "修复, export",
++      usageOriginLabel: "Codex 本地",
++      modelName: "gpt-5.4-codex",
++      statusLabel: "进行中",
++      workspaceLabel: "codex_token",
++      cwd: "/workspace/codex_token",
++      tokensUsed: 1250000,
++      cost: { totalUsd: 3.5 },
++      createdAt: 1773021600,
++      updatedAt: 1773108000,
++      promptText: "line one\nline two",
++    },
++  ];
++
++  const costSnapshot = logic.buildSessionExportSnapshot(rows, "cost");
++  assert.deepEqual(costSnapshot.columns, ["会话 ID", "标题", "来源", "模型", "Token", "费用", "更新时间"]);
++
++  const performanceSnapshot = logic.buildSessionExportSnapshot(rows, "performance");
++  assert.deepEqual(performanceSnapshot.columns, ["会话 ID", "标题", "状态", "模型", "创建时间", "更新时间"]);
++
++  const projectSnapshot = logic.buildSessionExportSnapshot(rows, "project");
++  assert.deepEqual(projectSnapshot.columns, ["会话 ID", "标题", "项目", "来源", "模型", "提示摘要"]);
++
++  const csv = logic.stringifyCsvSnapshot(costSnapshot);
++  assert.match(csv, /^会话 ID,标题,来源,模型,Token,费用,更新时间/m);
++  assert.match(csv, /"修复, export"/);
++  assert.match(csv, /GPT-5\.4/);
++});
++
+ test("openclaw model table markup renders model costs and fallback source state", () => {
+   const markup = logic.buildOpenClawModelTableMarkup([
+     { modelName: "gpt-5", totalUsd: 24.52151025 },
+@@ -185,6 +363,144 @@ test("billable input tokens exclude cached input tokens", () => {
+   );
+ });
+ 
++test("alert config is clamped to safe numeric boundaries and preserves disable switches", () => {
++  const config = logic.normalizeAlertConfig({
++    dailySpend: {
++      enabled: false,
++      thresholdUsd: -4,
++    },
++    failureRate: {
++      enabled: true,
++      thresholdPercent: 170,
++    },
++  });
++
++  assert.equal(config.dailySpend.enabled, false);
++  assert.equal(config.dailySpend.thresholdUsd, 0);
++  assert.equal(config.failureRate.enabled, true);
++  assert.equal(config.failureRate.thresholdPercent, 100);
++});
++
++test("alert metrics derive today's spend and terminal failure rate from the snapshot", () => {
++  const metrics = logic.getAlertMetrics({
++    generatedAt: "2026-03-13T08:00:00.000Z",
++    dailyLedger: [
++      { day: "2026-03-13", totalUsd: 6.2, totalTokens: 1200000 },
++      { day: "2026-03-12", totalUsd: 1.5, totalTokens: 400000 },
++    ],
++    recentThreads: [
++      { id: "done", createdAt: 1773360000, statusLabel: "已完结" },
++      { id: "aborted", createdAt: 1773360300, statusLabel: "已中断" },
++      { id: "running", createdAt: 1773360600, statusLabel: "进行中" },
++      { id: "older", createdAt: 1773270000, statusLabel: "已中断" },
++    ],
++  });
++
++  assert.equal(metrics.dailySpendUsd, 6.2);
++  assert.equal(metrics.failureRatePercent, 50);
++  assert.equal(metrics.failureCount, 1);
++  assert.equal(metrics.completedCount, 1);
++  assert.equal(metrics.terminalCount, 2);
++});
++
++test("alerts evaluate trigger and recovery states without blocking disabled rules", () => {
++  const config = logic.normalizeAlertConfig({
++    dailySpend: {
++      enabled: true,
++      thresholdUsd: 5,
++    },
++    failureRate: {
++      enabled: false,
++      thresholdPercent: 20,
++    },
++  });
++
++  const alertMetrics = {
++    dailySpendUsd: 6.2,
++    failureRatePercent: 10,
++    failureCount: 1,
++    completedCount: 9,
++    terminalCount: 10,
++  };
++
++  const states = logic.evaluateAlertStates({
++    metrics: alertMetrics,
++    config,
++    previousStates: {
++      dailySpend: { phase: "inactive" },
++      failureRate: { phase: "triggered" },
++    },
++    timestamp: "2026-03-13T08:00:00.000Z",
++  });
++
++  assert.equal(states.dailySpend.phase, "triggered");
++  assert.equal(states.dailySpend.isActive, true);
++  assert.equal(states.dailySpend.changedAt, "2026-03-13T08:00:00.000Z");
++  assert.equal(states.failureRate.phase, "disabled");
++  assert.equal(states.failureRate.isActive, false);
++  assert.equal(states.failureRate.changedAt, "2026-03-13T08:00:00.000Z");
++
++  const recoveredStates = logic.evaluateAlertStates({
++    metrics: {
++      ...alertMetrics,
++      dailySpendUsd: 2,
++    },
++    config: {
++      ...config,
++      failureRate: {
++        enabled: true,
++        thresholdPercent: 20,
++      },
++    },
++    previousStates: {
++      dailySpend: states.dailySpend,
++      failureRate: { phase: "triggered" },
++    },
++    timestamp: "2026-03-13T09:00:00.000Z",
++  });
++
++  assert.equal(recoveredStates.dailySpend.phase, "recovered");
++  assert.equal(recoveredStates.dailySpend.isActive, false);
++  assert.equal(recoveredStates.dailySpend.changedAt, "2026-03-13T09:00:00.000Z");
++  assert.equal(recoveredStates.failureRate.phase, "recovered");
++  assert.equal(recoveredStates.failureRate.changedAt, "2026-03-13T09:00:00.000Z");
++
++  const steadyRecoveredStates = logic.evaluateAlertStates({
++    metrics: {
++      ...alertMetrics,
++      dailySpendUsd: 1.5,
++      failureRatePercent: 5,
++    },
++    config: {
++      ...config,
++      failureRate: {
++        enabled: true,
++        thresholdPercent: 20,
++      },
++    },
++    previousStates: recoveredStates,
++    timestamp: "2026-03-13T10:00:00.000Z",
++  });
++
++  assert.equal(steadyRecoveredStates.dailySpend.phase, "recovered");
++  assert.equal(steadyRecoveredStates.dailySpend.changedAt, "2026-03-13T09:00:00.000Z");
++  assert.equal(steadyRecoveredStates.failureRate.phase, "recovered");
++  assert.equal(steadyRecoveredStates.failureRate.changedAt, "2026-03-13T09:00:00.000Z");
++
++  const steadyDisabledStates = logic.evaluateAlertStates({
++    metrics: alertMetrics,
++    config,
++    previousStates: {
++      dailySpend: { phase: "inactive" },
++      failureRate: states.failureRate,
++    },
++    timestamp: "2026-03-13T11:00:00.000Z",
++  });
++
++  assert.equal(steadyDisabledStates.failureRate.phase, "disabled");
++  assert.equal(steadyDisabledStates.failureRate.changedAt, "2026-03-13T08:00:00.000Z");
++});
++
+ test("dialog closes when the backdrop itself is clicked", () => {
+   const dialog = { nodeName: "DIALOG" };
+   assert.equal(logic.shouldCloseDialogFromBackdropClick(dialog, dialog), true);
+@@ -199,11 +515,15 @@ test("prompt summaries collapse whitespace and trim long prompts", () => {
+   );
+ });
+ 
+-test("dashboard html exposes the refactored shadcn-style shell structure", () => {
++test("dashboard html exposes the current shell structure and alert surfaces", () => {
+   const appSource = fs.readFileSync(path.join(__dirname, "..", "src", "App.jsx"), "utf8");
+ 
+   assert.match(appSource, /Codex 本地/);
+   assert.match(appSource, /OpenClaw \/ OAuth/);
++  assert.match(appSource, /模型价格表/);
++  assert.match(appSource, /告警与说明/);
++  assert.match(appSource, /日花费告警/);
++  assert.match(appSource, /失败率告警/);
+   assert.match(appSource, /来源筛选/);
+   assert.match(appSource, /SectionCard/);
+   assert.match(appSource, /TabsTrigger/);
+@@ -232,3 +552,74 @@ test("dashboard ui primitives avoid hard-coded slate palette classes", () => {
+     );
+   }
+ });
++
++test("dashboard source includes a local password gate and relock control", () => {
++  const appSource = fs.readFileSync(path.join(__dirname, "..", "src", "App.jsx"), "utf8");
++
++  assert.match(appSource, /970520/);
++  assert.match(appSource, /localStorage/);
++  assert.match(appSource, /访问密码/);
++  assert.match(appSource, /重新锁定|退出授权/);
++});
++
++test("dashboard source keeps core overview and alert detail sections", () => {
++  const appSource = fs.readFileSync(path.join(__dirname, "..", "src", "App.jsx"), "utf8");
++
++  assert.match(appSource, /当前会话账单明细/);
++  assert.match(appSource, /模型价格表/);
++  assert.match(appSource, /限制窗口/);
++  assert.match(appSource, /告警设置/);
++  assert.match(appSource, /口径说明/);
++  assert.match(appSource, /详情/);
++});
++
++test("dashboard source keeps date presets and export\/favorite workflow copy", () => {
++  const appSource = fs.readFileSync(path.join(__dirname, "..", "src", "App.jsx"), "utf8");
++
++  assert.match(appSource, /今日/);
++  assert.match(appSource, /昨日/);
++  assert.match(appSource, /7天/);
++  assert.match(appSource, /本月/);
++  assert.match(appSource, /自定义/);
++  assert.match(appSource, /成本视图/);
++  assert.match(appSource, /性能视图/);
++  assert.match(appSource, /项目视图/);
++  assert.match(appSource, /收藏视图/);
++  assert.match(appSource, /导出 CSV（全部筛选结果）/);
++  assert.match(appSource, /导出当前视图快照（JSON）/);
++  assert.doesNotMatch(appSource, /\{ value: "favorite", label: "收藏视图" \}/);
++  assert.match(appSource, /已保存收藏视图|请输入收藏视图名称/);
++  assert.match(appSource, /当前筛选结果没有可导出的 CSV 数据|当前视图没有可导出的快照数据|已导出/);
++});
++
++test("dashboard source includes alert controls and metric explanation hover copy", () => {
++  const appSource = fs.readFileSync(path.join(__dirname, "..", "src", "App.jsx"), "utf8");
++
++  assert.match(appSource, /日花费阈值/);
++  assert.match(appSource, /失败率阈值/);
++  assert.match(appSource, /告警设置/);
++  assert.match(appSource, /口径说明/);
++});
++
++test("dashboard source includes round2 decision insights and failure detail entry", () => {
++  const appSource = fs.readFileSync(path.join(__dirname, "..", "src", "App.jsx"), "utf8");
++
++  assert.match(appSource, /Round2 决策看板/);
++  assert.match(appSource, /Top 项目成本排行（今日\/7天）/);
++  assert.match(appSource, /Top 模型成本排行（今日\/7天）/);
++  assert.match(appSource, /单位效率指标/);
++  assert.match(appSource, /失败任务概览/);
++  assert.match(appSource, /查看详情|详情不可用/);
++});
++
++test("homepage keeps key summary, alert, pricing, and refresh-status surfaces", () => {
++  const appSource = fs.readFileSync(path.join(__dirname, "..", "src", "App.jsx"), "utf8");
++
++  assert.match(appSource, /Codex 本地总消耗/);
++  assert.match(appSource, /Codex 本地累计费用/);
++  assert.match(appSource, /当前模型/);
++  assert.match(appSource, /日花费告警/);
++  assert.match(appSource, /失败率告警/);
++  assert.match(appSource, /模型价格表|\/settings\/pricing/);
++  assert.match(appSource, /实时状态|最近更新/);
++});

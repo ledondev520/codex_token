@@ -1,0 +1,10 @@
+diff --git a/DEPLOY-CHECKLIST.md b/DEPLOY-CHECKLIST.md
+new file mode 100644
++ Added the shortest documented path for syncing to the VPS, installing dependencies, building, starting with PM2, and running health checks on port 18080.
+diff --git a/ACCEPTANCE-CHECKLIST.md b/ACCEPTANCE-CHECKLIST.md
+new file mode 100644
++ Added a boss-focused acceptance flow limited to first-screen state, running sessions, today cost, and 5h/7d limit windows.
+diff --git a/PLAN.md b/PLAN.md
++ Added a completed milestone for deployment and acceptance documentation on VPS port 18080.
+diff --git a/TASKS.md b/TASKS.md
++ Added completed task T44 for deployment and acceptance checklist documentation.

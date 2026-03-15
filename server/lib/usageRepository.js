@@ -149,6 +149,244 @@ function getDailyUsage(stateDbPath, days = 14) {
   }));
 }
 
+function createDecisionWindowSummary() {
+  return {
+    totalUsd: 0,
+    totalTokens: 0,
+    inputTokens: 0,
+    cachedInputTokens: 0,
+    successCount: 0,
+    failureCount: 0,
+    terminalCount: 0,
+    projectTotals: new Map(),
+    modelTotals: new Map(),
+  };
+}
+
+function upsertDecisionAggregate(map, key, label, entry) {
+  if (!key || !label || !entry?.tokenUsage) {
+    return;
+  }
+
+  const existing = map.get(key) || {
+    key,
+    label,
+    totalUsd: 0,
+    totalTokens: 0,
+    threadIds: new Set(),
+  };
+
+  existing.totalUsd += Number(entry.cost?.totalUsd || 0);
+  existing.totalTokens += Number(entry.tokenUsage.totalTokens || 0);
+  if (entry.threadId) {
+    existing.threadIds.add(entry.threadId);
+  }
+
+  map.set(key, existing);
+}
+
+function finalizeDecisionRanking(map, limit = 5) {
+  return Array.from(map.values())
+    .map((row) => ({
+      key: row.key,
+      label: row.label,
+      totalUsd: row.totalUsd,
+      totalTokens: row.totalTokens,
+      threadCount: row.threadIds.size,
+    }))
+    .sort((left, right) => {
+      if (right.totalUsd !== left.totalUsd) {
+        return right.totalUsd - left.totalUsd;
+      }
+
+      if (right.totalTokens !== left.totalTokens) {
+        return right.totalTokens - left.totalTokens;
+      }
+
+      return left.label.localeCompare(right.label);
+    })
+    .slice(0, limit);
+}
+
+function finalizeEfficiencyWindow(window) {
+  const costPer1kTokens = window.totalTokens
+    ? (window.totalUsd / window.totalTokens) * 1000
+    : null;
+  const cacheHitRate = window.inputTokens
+    ? (window.cachedInputTokens / window.inputTokens) * 100
+    : null;
+  const successRate = window.terminalCount
+    ? (window.successCount / window.terminalCount) * 100
+    : null;
+
+  return {
+    totalUsd: window.totalUsd,
+    totalTokens: window.totalTokens,
+    inputTokens: window.inputTokens,
+    cachedInputTokens: window.cachedInputTokens,
+    successCount: window.successCount,
+    failureCount: window.failureCount,
+    terminalCount: window.terminalCount,
+    costPer1kTokens,
+    cacheHitRate,
+    successRate,
+  };
+}
+
+function buildDecisionInsights({
+  stateDbPath,
+  sessionsDir,
+  archivedSessionsDir,
+  now,
+  timeZone,
+}) {
+  const nowMs = new Date(now || Date.now()).getTime();
+  const todayKey = getLocalDayKey(nowMs, timeZone);
+  const last7DayKeys = new Set(
+    Array.from({ length: 7 }, (_, offset) =>
+      getLocalDayKey(nowMs - offset * 24 * 60 * 60 * 1000, timeZone)
+    )
+  );
+  const oldestRelevantMs = nowMs - 8 * 24 * 60 * 60 * 1000;
+  const threadLookup = new Map(
+    getRecentThreads(stateDbPath, null).map((thread) => [
+      thread.id,
+      {
+        ...thread,
+        workspaceLabel: formatWorkspaceLabel(thread.cwd),
+      },
+    ])
+  );
+  const files = [
+    ...listJsonlFiles(sessionsDir),
+    ...listJsonlFiles(archivedSessionsDir),
+  ]
+    .filter((file) => file.mtimeMs >= oldestRelevantMs)
+    .sort((left, right) => right.mtimeMs - left.mtimeMs);
+  const sessionMap = new Map();
+
+  for (const file of files) {
+    const details = extractSessionDetails(file.path, { timeZone });
+    if (!details?.threadId) {
+      continue;
+    }
+
+    sessionMap.set(details.threadId, mergeSessionDetails(sessionMap.get(details.threadId), details));
+  }
+
+  const todayWindow = createDecisionWindowSummary();
+  const last7DaysWindow = createDecisionWindowSummary();
+  const failedThreads = [];
+
+  for (const details of sessionMap.values()) {
+    const thread = threadLookup.get(details.threadId);
+    const projectKey = String(thread?.cwd || details.threadId || "").trim() || details.threadId;
+    const projectLabel = thread?.workspaceLabel || "未知项目";
+
+    for (const entry of details.ledgerEntries || []) {
+      const entryDay = String(entry.day || "");
+      const row = {
+        ...entry,
+        threadId: details.threadId,
+      };
+
+      if (entryDay === todayKey) {
+        todayWindow.totalUsd += Number(entry.cost?.totalUsd || 0);
+        todayWindow.totalTokens += Number(entry.tokenUsage?.totalTokens || 0);
+        todayWindow.inputTokens += Number(entry.tokenUsage?.inputTokens || 0);
+        todayWindow.cachedInputTokens += Number(entry.tokenUsage?.cachedInputTokens || 0);
+        upsertDecisionAggregate(todayWindow.projectTotals, projectKey, projectLabel, row);
+        upsertDecisionAggregate(
+          todayWindow.modelTotals,
+          String(entry.modelName || "unknown"),
+          String(entry.modelName || "未知模型"),
+          row
+        );
+      }
+
+      if (last7DayKeys.has(entryDay)) {
+        last7DaysWindow.totalUsd += Number(entry.cost?.totalUsd || 0);
+        last7DaysWindow.totalTokens += Number(entry.tokenUsage?.totalTokens || 0);
+        last7DaysWindow.inputTokens += Number(entry.tokenUsage?.inputTokens || 0);
+        last7DaysWindow.cachedInputTokens += Number(entry.tokenUsage?.cachedInputTokens || 0);
+        upsertDecisionAggregate(last7DaysWindow.projectTotals, projectKey, projectLabel, row);
+        upsertDecisionAggregate(
+          last7DaysWindow.modelTotals,
+          String(entry.modelName || "unknown"),
+          String(entry.modelName || "未知模型"),
+          row
+        );
+      }
+    }
+
+    const terminalStatus = details.statusLabel === "已完结" || details.statusLabel === "已中断";
+    const statusDay = details.statusAt ? getLocalDayKey(details.statusAt, timeZone) : "";
+
+    if (terminalStatus && statusDay === todayKey) {
+      todayWindow.terminalCount += 1;
+      if (details.statusLabel === "已完结") {
+        todayWindow.successCount += 1;
+      } else {
+        todayWindow.failureCount += 1;
+      }
+    }
+
+    if (terminalStatus && last7DayKeys.has(statusDay)) {
+      last7DaysWindow.terminalCount += 1;
+      if (details.statusLabel === "已完结") {
+        last7DaysWindow.successCount += 1;
+      } else {
+        last7DaysWindow.failureCount += 1;
+      }
+    }
+
+    if (details.statusLabel === "已中断" && last7DayKeys.has(statusDay)) {
+      failedThreads.push({
+        threadId: details.threadId,
+        title: thread?.title || "",
+        titlePreview: summarizeTitle(thread?.title),
+        projectLabel,
+        modelName: details.modelName || null,
+        failedAt: details.statusAt || null,
+        cost: details.cost || null,
+      });
+    }
+  }
+
+  failedThreads.sort(
+    (left, right) => new Date(right.failedAt || 0).getTime() - new Date(left.failedAt || 0).getTime()
+  );
+
+  return {
+    projectCost: {
+      today: finalizeDecisionRanking(todayWindow.projectTotals),
+      last7Days: finalizeDecisionRanking(last7DaysWindow.projectTotals),
+      note: "仅统计本地 session 日志里可解析的 token_count 增量费用，并按线程工作目录聚合项目。",
+    },
+    modelCost: {
+      today: finalizeDecisionRanking(todayWindow.modelTotals),
+      last7Days: finalizeDecisionRanking(last7DaysWindow.modelTotals),
+      note: "仅统计本地 session 日志里可解析的 token_count 增量费用，并按当时模型名聚合。",
+    },
+    efficiency: {
+      today: finalizeEfficiencyWindow(todayWindow),
+      last7Days: finalizeEfficiencyWindow(last7DaysWindow),
+      costPer1kNote: "按 token_count 增量费用 / 增量 total_tokens * 1000 计算。",
+      cacheHitRateNote:
+        "按 token_count 增量里的 cached_input_tokens / input_tokens 计算；缺少 input_tokens 时返回空值。",
+      successRateNote:
+        "按近 7 个自然日内最新终态计算：成功率 = 已完结 / (已完结 + 已中断)。",
+    },
+    failures: {
+      todayCount: todayWindow.failureCount,
+      last7DaysCount: last7DaysWindow.failureCount,
+      latestFailedAt: failedThreads[0]?.failedAt || null,
+      recent: failedThreads.slice(0, 5),
+      note: "失败定义为线程最新终态为“已中断”。",
+    },
+  };
+}
+
 function listJsonlFiles(rootDir, target = []) {
   if (!fs.existsSync(rootDir)) {
     return target;
@@ -639,6 +877,34 @@ async function loadSnapshot(options = {}) {
         timeZone,
         ledgerFileLimit: options.ledgerFileLimit,
       });
+  const decision = options.skipSessionParsing
+    ? {
+        projectCost: { today: [], last7Days: [], note: "" },
+        modelCost: { today: [], last7Days: [], note: "" },
+        efficiency: {
+          today: finalizeEfficiencyWindow(createDecisionWindowSummary()),
+          last7Days: finalizeEfficiencyWindow(createDecisionWindowSummary()),
+          costPer1kNote: "按 token_count 增量费用 / 增量 total_tokens * 1000 计算。",
+          cacheHitRateNote:
+            "按 token_count 增量里的 cached_input_tokens / input_tokens 计算；缺少 input_tokens 时返回空值。",
+          successRateNote:
+            "按近 7 个自然日内最新终态计算：成功率 = 已完结 / (已完结 + 已中断)。",
+        },
+        failures: {
+          todayCount: 0,
+          last7DaysCount: 0,
+          latestFailedAt: null,
+          recent: [],
+          note: "失败定义为线程最新终态为“已中断”。",
+        },
+      }
+    : buildDecisionInsights({
+        stateDbPath: paths.stateDbPath,
+        sessionsDir: paths.sessionsDir,
+        archivedSessionsDir: paths.archivedSessionsDir,
+        now: options.now || new Date(),
+        timeZone,
+      });
   const latestLiveEvent = getLatestLiveEvent(recentSessionMap);
   let openclaw = null;
   if (!options.skipOpenClawUsage) {
@@ -685,18 +951,25 @@ async function loadSnapshot(options = {}) {
       archivedSessionsDir: paths.archivedSessionsDir,
     },
     overview,
+    decision,
     openclaw,
     dailyLedger: dailyLedger.rows,
     pricingCatalog,
     live: {
       currentSession: latestLiveEvent.currentSession
         ? {
-          ...latestLiveEvent.currentSession.tokenUsage,
-          modelName: latestLiveEvent.currentSession.modelName,
-          cost: latestLiveEvent.currentSession.cost,
-          usageOrigin: liveThread?.usageOrigin || "codex-local",
-          usageOriginLabel: liveThread?.usageOriginLabel || "Codex 本地",
-        }
+            ...latestLiveEvent.currentSession.tokenUsage,
+            threadId: latestLiveEvent.currentSession.threadId,
+            modelName: latestLiveEvent.currentSession.modelName,
+            cost: latestLiveEvent.currentSession.cost,
+            usageOrigin: liveThread?.usageOrigin || "codex-local",
+            usageOriginLabel: liveThread?.usageOriginLabel || "Codex 本地",
+            statusLabel: liveThread?.statusLabel || "未知",
+            title: liveThread?.title || latestLiveEvent.currentSession.threadId,
+            titlePreview:
+              liveThread?.titlePreview ||
+              summarizeTitle(liveThread?.title || latestLiveEvent.currentSession.threadId),
+          }
         : null,
       rateLimits: latestLiveEvent.rateLimits?.rateLimits || null,
       latestEventAt: latestLiveEvent.currentSession?.timestamp || null,
