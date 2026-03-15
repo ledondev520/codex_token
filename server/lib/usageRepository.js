@@ -103,26 +103,30 @@ function formatWorkspaceLabel(cwd) {
   return basename;
 }
 
-function classifyUsageOrigin({ cwd, source }) {
+function classifyUsageOrigin({ cwd, source, modelName }) {
   const normalizedCwd = String(cwd || "").trim();
   const normalizedSource = String(source || "").trim().toLowerCase();
+  const normalizedModel = String(modelName || "").trim().toLowerCase();
+
+  const isLobsterModel = normalizedModel.includes("gpt-5") || normalizedModel.includes("gpt5");
 
   if (
     normalizedCwd.includes("/.openclaw/") ||
     normalizedCwd.includes("\\.openclaw\\") ||
-    normalizedSource === "oauth"
+    normalizedSource === "oauth" ||
+    isLobsterModel
   ) {
     return {
       kind: "openclaw-oauth",
-      label: "OpenClaw / OAuth",
-      description: "通过 OpenClaw 工作区触发，底层仍消耗 Codex token",
+      label: "小龙虾主脑",
+      description: "来自 CodeX OS / 小龙虾主脑的 Codex 开销",
     };
   }
 
   return {
     kind: "codex-local",
-    label: "Codex 本地",
-    description: "直接来自 ~/.codex 的本地线程与会话日志",
+    label: "Codex 编程",
+    description: "直接来自本地 Codex 会话与限额快照",
   };
 }
 
@@ -919,7 +923,7 @@ async function loadSnapshot(options = {}) {
   const recentThreads = getRecentThreads(paths.stateDbPath, options.recentThreadsLimit).map(
     (thread) => {
       const sessionDetails = recentSessionMap.get(thread.id);
-      const usageOrigin = classifyUsageOrigin(thread);
+      const usageOrigin = classifyUsageOrigin({ ...thread, modelName: sessionDetails?.modelName });
       return {
         ...thread,
         titlePreview: summarizeTitle(thread.title),

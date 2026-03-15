@@ -132,7 +132,11 @@ function getPricingForModel(modelName) {
     return null;
   }
 
-  const exactMatch = PRICING_BY_MODEL[normalizedModelName];
+  // Helper to check for exact match
+  const getMatch = (name) => PRICING_BY_MODEL[name] || null;
+
+  // 1. Try exact normalized match
+  let exactMatch = getMatch(normalizedModelName);
   if (exactMatch) {
     return {
       normalizedModelName,
@@ -141,30 +145,61 @@ function getPricingForModel(modelName) {
     };
   }
 
-  if (normalizedModelName.endsWith("-spark")) {
-    const baseModel = normalizedModelName.replace(/-spark$/, "");
-    const basePricing = PRICING_BY_MODEL[baseModel];
-    if (basePricing) {
+  // 2. Special case for gpt-5.3 -> gpt-5.3-codex
+  if (normalizedModelName === "gpt-5.3") {
+    const codexPricing = getMatch("gpt-5.3-codex");
+    if (codexPricing) {
       return {
         normalizedModelName,
-        pricingModelName: baseModel,
-        ...basePricing,
-        sourceType: "inferred",
-        sourceLabel: `${basePricing.sourceLabel}（按 spark 别名推断）`,
+        pricingModelName: "gpt-5.3-codex",
+        ...codexPricing,
+        sourceType: "alias",
+        sourceLabel: `${codexPricing.sourceLabel} (gpt-5.3 别名)`,
       };
     }
   }
 
+  // 3. Fallback: try appending -codex if missing
+  if (!normalizedModelName.endsWith("-codex")) {
+    const codexName = `${normalizedModelName}-codex`;
+    const codexPricing = getMatch(codexName);
+    if (codexPricing) {
+      return {
+        normalizedModelName,
+        pricingModelName: codexName,
+        ...codexPricing,
+        sourceType: "inferred",
+        sourceLabel: `${codexPricing.sourceLabel} (自动匹配为 codex 版本)`,
+      };
+    }
+  }
+
+  // 4. Fallback: try stripping -codex
   if (normalizedModelName.endsWith("-codex")) {
     const baseModel = normalizedModelName.replace(/-codex$/, "");
-    const basePricing = PRICING_BY_MODEL[baseModel];
+    const basePricing = getMatch(baseModel);
     if (basePricing) {
       return {
         normalizedModelName,
         pricingModelName: baseModel,
         ...basePricing,
         sourceType: "inferred",
-        sourceLabel: `${basePricing.sourceLabel}（按 codex 别名推断）`,
+        sourceLabel: `${basePricing.sourceLabel} (剥离 codex 后缀匹配)`,
+      };
+    }
+  }
+
+  // 5. Fallback: try stripping -spark
+  if (normalizedModelName.endsWith("-spark")) {
+    const baseModel = normalizedModelName.replace(/-spark$/, "");
+    const basePricing = getMatch(baseModel);
+    if (basePricing) {
+      return {
+        normalizedModelName,
+        pricingModelName: baseModel,
+        ...basePricing,
+        sourceType: "inferred",
+        sourceLabel: `${basePricing.sourceLabel} (剥离 spark 后缀匹配)`,
       };
     }
   }
@@ -173,17 +208,16 @@ function getPricingForModel(modelName) {
 }
 
 function formatCatalogModelName(modelName, pricing) {
-  const normalizedModelName = normalizeModelName(modelName);
+  const pName = pricing?.pricingModelName;
 
-  if (
-    normalizedModelName === "gpt-5.4" ||
-    normalizedModelName === "gpt-5.4-codex" ||
-    pricing?.pricingModelName === "gpt-5.4"
-  ) {
+  if (pName === "gpt-5.4") {
     return "GPT-5.4";
   }
+  if (pName === "gpt-5.3-codex") {
+    return "GPT-5.3 Codex";
+  }
 
-  return normalizedModelName;
+  return normalizeModelName(modelName);
 }
 
 function buildPricingCatalog(modelNames) {

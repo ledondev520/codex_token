@@ -72,8 +72,26 @@ export function formatModelLabel(modelName) {
     return "未知模型";
   }
 
-  if (String(modelName).toLowerCase() === "gpt-5.4-codex") {
+  const normalized = String(modelName).toLowerCase().trim();
+  
+  // Specific variants for 5.3 -> GPT-5.3 Codex
+  if (normalized === "gpt-5.3-codex" || normalized === "gpt5.3-codex" || normalized === "gpt-5.3" || normalized === "gpt5.3") {
+    return "GPT-5.3 Codex";
+  }
+
+  // Specific variants for 5.4 -> GPT-5.4
+  if (normalized === "gpt-5.4" || normalized === "gpt5.4" || normalized === "gpt-5.4-codex" || normalized === "gpt5.4-codex") {
     return "GPT-5.4";
+  }
+
+  // Generic matcher for other gpt-5.x variants
+  const regex = /^gpt-?5?\.?(\d+)(-codex)?$/;
+  const match = normalized.match(regex);
+  if (match) {
+    const version = match[1];
+    if (version === "3") return "GPT-5.3 Codex";
+    if (version === "4") return "GPT-5.4";
+    return `GPT-5.${version} Codex`;
   }
 
   return String(modelName);

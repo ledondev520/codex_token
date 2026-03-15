@@ -172,7 +172,7 @@ export default function App() {
     <div className="mx-auto max-w-[1520px] space-y-4 px-3 py-4 sm:px-4 md:px-6 lg:px-8 lg:py-6 transition-all duration-300">
       <PageHeader
         title="Codex 用量统计"
-        description="把你直接使用 Codex 和小龙虾代用的两笔账拆开看。"
+        description="把你直接使用 Codex 和小龙虾主脑的两笔账拆开看。"
         actions={
           <div className="flex flex-wrap items-center gap-2 sm:gap-3">
             <Badge variant="outline" className="px-3 py-1 text-xs text-muted-foreground bg-muted/20 border-border/50 shadow-sm hidden sm:inline-flex">

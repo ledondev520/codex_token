@@ -23,7 +23,7 @@ export function SessionDetailDialog({ row, open, onOpenChange }) {
           </DialogHeader>
         </div>
         
-        <ScrollArea className="flex-1 p-4 sm:p-6 pb-8">
+        <div className="flex-1 overflow-y-auto p-4 sm:p-6 pb-8">
           {!row ? null : (
             <div className="space-y-6 sm:space-y-8 max-w-full">
               <div className="grid gap-4 sm:gap-6 text-sm grid-cols-1 sm:grid-cols-2 bg-muted/20 p-4 rounded-xl border border-dashed">
@@ -59,7 +59,7 @@ export function SessionDetailDialog({ row, open, onOpenChange }) {
                       </AccordionTrigger>
                       <AccordionContent className="p-0 border-t">
                         <div className="p-4 sm:p-5 bg-background">
-                           <pre className="whitespace-pre-wrap font-mono text-[11px] sm:text-xs leading-relaxed text-muted-foreground break-words max-h-[300px] overflow-y-auto w-full custom-scrollbar">{promptText}</pre>
+                           <pre className="whitespace-pre-wrap font-mono text-[11px] sm:text-xs leading-relaxed text-muted-foreground break-words w-full">{promptText}</pre>
                         </div>
                       </AccordionContent>
                     </AccordionItem>
@@ -70,7 +70,7 @@ export function SessionDetailDialog({ row, open, onOpenChange }) {
               <div className="space-y-4">
                 <Label className="block text-foreground font-medium text-base">用户轮次</Label>
                 {(row.userMessages || []).length ? (
-                  <div className="grid gap-3 sm:gap-4 max-h-[400px] sm:max-h-[500px] overflow-y-auto pr-2 custom-scrollbar">
+                  <div className="grid gap-3 sm:gap-4 pr-2">
                     {row.userMessages.map((message, index) => (
                       <Card key={`${message.timestamp}-${index}`} className="rounded-xl shadow-sm border-muted-foreground/20 hover:border-primary/30 transition-colors">
                         <CardContent className="space-y-3 p-4 sm:p-5">
@@ -96,7 +96,7 @@ export function SessionDetailDialog({ row, open, onOpenChange }) {
               </div>
             </div>
           )}
-        </ScrollArea>
+        </div>
       </DialogContent>
     </Dialog>
   );

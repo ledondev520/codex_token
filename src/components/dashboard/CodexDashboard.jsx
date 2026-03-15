@@ -17,6 +17,7 @@ import { CostBreakdownTable } from "./CostBreakdownTable.jsx";
 import { LedgerBillingTable } from "./LedgerBillingTable.jsx";
 import { PricingCatalogTable } from "./PricingCatalogTable.jsx";
 import { SessionDetailDialog } from "./SessionDetailDialog.jsx";
+import { BillingChart } from "./BillingChart.jsx";
 import { AlertStatusCard, AlertSettingsCard } from "./AlertSettings.jsx";
 import { DecisionTopCostCard, DecisionEfficiencyCard, DecisionFailuresCard } from "./DecisionComponents.jsx";
 
@@ -97,6 +98,7 @@ export function CodexDashboard({
 }) {
   const [workbenchLedger, setWorkbenchLedger] = useState("codex-local");
   const [workbenchTab, setWorkbenchTab] = useState("sessions");
+  const [chartFilter, setChartFilter] = useState("all"); // "all" | "30" | "14" | "month" | "monthly"
   const [selectedThreadId, setSelectedThreadId] = useState(null);
   const [sessionPage, setSessionPage] = useState(1);
   const [query, setQuery] = useState("");
@@ -269,19 +271,65 @@ export function CodexDashboard({
     { label: "今日 Token", value: formatTokenMillions(lobsterWindowSummary.today.totalTokens), subvalue: `费用 ${formatUsd(lobsterWindowSummary.today.totalUsd)}` },
     { label: "近 7 天费用", value: formatUsd(lobsterWindowSummary.last7Days.totalUsd), subvalue: `${lobsterWindowSummary.last7Days.startDay} 至 ${lobsterWindowSummary.last7Days.endDay}`, tone: "muted" },
     { label: "近 7 天 Token", value: formatTokenMillions(lobsterWindowSummary.last7Days.totalTokens), subvalue: `${lobsterWindowSummary.last7Days.startDay} 至 ${lobsterWindowSummary.last7Days.endDay}` },
-    { label: "当前活跃", value: snapshot.openclaw ? formatTokenRaw(lobsterRuntimeSessions.length) : "-", subvalue: snapshot.openclaw?.updatedAt ? `最近同步 ${new Date(snapshot.openclaw.updatedAt).toLocaleString("zh-CN")}` : "未读取到小龙虾代用数据", tone: "teal" },
+    { label: "当前活跃", value: snapshot.openclaw ? formatTokenRaw(lobsterRuntimeSessions.length) : "-", subvalue: snapshot.openclaw?.updatedAt ? `最近同步 ${new Date(snapshot.openclaw.updatedAt).toLocaleString("zh-CN")}` : "未读取到小龙虾主脑数据", tone: "teal" },
   ];
 
   const billingRows = workbenchLedger === "openclaw-oauth" ? snapshot.openclaw?.daily || [] : snapshot.dailyLedger || [];
   const workbenchSummary = getWindowSummary(billingRows, snapshot.generatedAt);
 
+  const allTimeSummary = useMemo(() => {
+    const rows = billingRows || [];
+    const totalUsd = rows.reduce((sum, row) => sum + Number(row.totalUsd || 0), 0);
+    const totalTokens = rows.reduce((sum, row) => sum + Number(row.totalTokens || 0), 0);
+    const sorted = [...rows].sort((a, b) => a.day.localeCompare(b.day));
+    return {
+      totalUsd,
+      totalTokens,
+      startDay: sorted[0]?.day || "-",
+      endDay: sorted[sorted.length - 1]?.day || "-",
+    };
+  }, [billingRows]);
+
+  const filteredBillingRows = useMemo(() => {
+    const all = [...(billingRows || [])].sort((a, b) => a.day.localeCompare(b.day));
+    const today = new Date();
+    const todayStr = today.toISOString().slice(0, 10);
+    if (chartFilter === "all" || chartFilter === "monthly") return all;
+    if (chartFilter === "30") {
+      const cutoff = new Date(today); cutoff.setDate(today.getDate() - 29);
+      return all.filter((r) => r.day >= cutoff.toISOString().slice(0, 10) && r.day <= todayStr);
+    }
+    if (chartFilter === "14") {
+      const cutoff = new Date(today); cutoff.setDate(today.getDate() - 13);
+      return all.filter((r) => r.day >= cutoff.toISOString().slice(0, 10) && r.day <= todayStr);
+    }
+    if (chartFilter === "month") {
+      const firstOfMonth = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-01`;
+      return all.filter((r) => r.day >= firstOfMonth && r.day <= todayStr);
+    }
+    return all;
+  }, [billingRows, chartFilter]);
+
+  const filteredSummary = useMemo(() => {
+    if (!filteredBillingRows.length) return null;
+    
+    const totalUsd = filteredBillingRows.reduce((sum, row) => sum + Number(row.totalUsd || 0), 0);
+    const totalTokens = filteredBillingRows.reduce((sum, row) => sum + Number(row.totalTokens || 0), 0);
+    return {
+      totalUsd,
+      totalTokens,
+      startDay: filteredBillingRows[0]?.day,
+      endDay: filteredBillingRows[filteredBillingRows.length - 1]?.day,
+    };
+  }, [filteredBillingRows]);
+
   return (
     <>
       <div className="grid min-w-0 gap-5 lg:gap-8 xl:gap-10">
-        <SectionCard title="双账本总览" description="把你直接使用 Codex 和小龙虾代用的开销拆开看。">
+        <SectionCard title="双账本总览" description="把你直接使用 Codex 和小龙虾主脑的开销拆开看。">
           <div className="grid gap-4 xl:gap-6 xl:grid-cols-2">
             <LedgerOverviewCard
-              title="我直接使用 Codex"
+              title="Codex 编程"
               subtitle="直接来自本地 Codex 会话与限额快照。"
               stateLabel={codexStateLabel}
               metrics={codexMetrics}
@@ -291,14 +339,14 @@ export function CodexDashboard({
               emptySessionCopy="当前没有正在运行的 Codex 会话。"
             />
             <LedgerOverviewCard
-              title="小龙虾代用"
-              subtitle="来自 CodeX OS / 小龙虾代用的 Codex 开销。"
+              title="小龙虾主脑"
+              subtitle="来自 CodeX OS / 小龙虾主脑的 Codex 开销。"
               stateLabel={lobsterStateLabel}
               metrics={lobsterMetrics}
               sessions={lobsterRuntimeSessions}
               generatedAt={snapshot.generatedAt}
               onOpenThread={handleOpenThread}
-              emptySessionCopy="当前没有正在运行的小龙虾代用会话。"
+              emptySessionCopy="当前没有正在运行的小龙虾主脑会话。"
             />
           </div>
         </SectionCard>
@@ -309,8 +357,8 @@ export function CodexDashboard({
           actions={
             <Tabs value={workbenchLedger} onValueChange={setWorkbenchLedger} className="w-full sm:w-auto mt-3 sm:mt-0">
               <TabsList className="h-auto w-full flex-wrap sm:flex-nowrap p-1 bg-muted/50">
-                <TabsTrigger value="codex-local" className="flex-1 text-sm py-1.5 px-3">我直接使用 Codex</TabsTrigger>
-                <TabsTrigger value="openclaw-oauth" className="flex-1 text-sm py-1.5 px-3">小龙虾代用</TabsTrigger>
+                <TabsTrigger value="codex-local" className="flex-1 text-sm py-1.5 px-3">Codex 编程</TabsTrigger>
+                <TabsTrigger value="openclaw-oauth" className="flex-1 text-sm py-1.5 px-3">小龙虾主脑</TabsTrigger>
               </TabsList>
             </Tabs>
           }
@@ -318,7 +366,7 @@ export function CodexDashboard({
           <Tabs value={workbenchTab} onValueChange={setWorkbenchTab}>
             <TabsList className="w-full sm:w-auto grid grid-cols-2 max-w-[400px]">
               <TabsTrigger value="sessions" className="text-sm">全部会话</TabsTrigger>
-              <TabsTrigger value="billing" className="text-sm">近 7 天账单</TabsTrigger>
+              <TabsTrigger value="billing" className="text-sm">全部账单</TabsTrigger>
             </TabsList>
 
             <TabsContent value="sessions">
@@ -401,15 +449,49 @@ export function CodexDashboard({
 
             <TabsContent value="billing">
               <div className="mt-5 space-y-4">
-                <div className="grid gap-3 sm:gap-4 sm:grid-cols-2 xl:grid-cols-4">
-                  <MetricTile label="今日费用" value={formatUsd(workbenchSummary.today.totalUsd)} subvalue={getLedgerOriginLabel(workbenchLedger)} compact tone="muted" />
-                  <MetricTile label="今日 Token" value={formatTokenMillions(workbenchSummary.today.totalTokens)} subvalue={getLedgerOriginLabel(workbenchLedger)} compact />
-                  <MetricTile label="近 7 天费用" value={formatUsd(workbenchSummary.last7Days.totalUsd)} subvalue={`${workbenchSummary.last7Days.startDay} 至 ${workbenchSummary.last7Days.endDay}`} compact tone="muted" />
-                  <MetricTile label="近 7 天 Token" value={formatTokenMillions(workbenchSummary.last7Days.totalTokens)} subvalue={`${workbenchSummary.last7Days.startDay} 至 ${workbenchSummary.last7Days.endDay}`} compact />
+                <div className="flex flex-wrap gap-2 items-center">
+                  <span className="text-[12px] text-muted-foreground font-medium mr-1">快捷日期：</span>
+                  {[
+                    { key: "all", label: "全量" },
+                    { key: "30", label: "近 30 天" },
+                    { key: "14", label: "近 14 天" },
+                    { key: "month", label: "本月" },
+                    { key: "monthly", label: "以自然月" },
+                  ].map(({ key, label }) => (
+                    <button
+                      key={key}
+                      type="button"
+                      onClick={() => setChartFilter(key)}
+                      className={`px-3 py-1 rounded-full text-[12px] font-medium border transition-all ${
+                        chartFilter === key
+                          ? "bg-primary text-primary-foreground border-primary shadow-sm"
+                          : "bg-muted/40 text-muted-foreground border-border hover:bg-muted hover:text-foreground"
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  ))}
                 </div>
-                <LedgerBillingTable rows={(billingRows || []).slice(0, 14)} emptyCopy="当前账本暂无账单数据。" />
+                <div className="grid gap-3 sm:gap-4 sm:grid-cols-2">
+                  <MetricTile
+                    label={chartFilter === "all" ? "全部费用" : chartFilter === "monthly" ? "月度累计费用" : "选中范围费用"}
+                    value={formatUsd(filteredSummary?.totalUsd ?? allTimeSummary.totalUsd)}
+                    subvalue={filteredSummary ? `${filteredSummary.startDay} 至 ${filteredSummary.endDay}` : `${allTimeSummary.startDay} 至 ${allTimeSummary.endDay}`}
+                    compact
+                    tone="muted"
+                  />
+                  <MetricTile
+                    label={chartFilter === "all" ? "全部 Token" : chartFilter === "monthly" ? "月度累计 Token" : "选中范围 Token"}
+                    value={formatTokenMillions(filteredSummary?.totalTokens ?? allTimeSummary.totalTokens)}
+                    subvalue={filteredSummary ? `${filteredSummary.startDay} 至 ${filteredSummary.endDay}` : `${allTimeSummary.startDay} 至 ${allTimeSummary.endDay}`}
+                    compact
+                  />
+                </div>
+                <BillingChart rows={filteredBillingRows} viewMode={chartFilter === "monthly" ? "monthly" : "daily"} />
+                <LedgerBillingTable rows={filteredBillingRows} emptyCopy="当前账本暂无账单数据。" />
               </div>
             </TabsContent>
+
           </Tabs>
         </SectionCard>
 
@@ -424,16 +506,16 @@ export function CodexDashboard({
                   <div className="grid min-w-0 gap-4 sm:gap-5 md:grid-cols-2">
                     <Card className="rounded-xl bg-card border-dashed shadow-sm border-muted-foreground/30 hover:border-muted-foreground/50 transition-colors">
                       <CardContent className="space-y-3 p-5">
-                        <Label className="uppercase tracking-[0.15em] text-[11px] text-muted-foreground font-semibold">我直接使用 Codex</Label>
+                        <Label className="uppercase tracking-[0.15em] text-[11px] text-muted-foreground font-semibold">Codex 编程</Label>
                         <div className="text-xl font-bold tracking-tight text-foreground">Codex 本地</div>
                         <p className="text-[13px] leading-relaxed text-muted-foreground">来自 <code className="bg-muted px-1.5 py-0.5 rounded font-mono text-[11px] border shadow-sm">~/.codex</code> 的 SQLite 与 session JSONL。</p>
                       </CardContent>
                     </Card>
                     <Card className="rounded-xl bg-card border-dashed shadow-sm border-muted-foreground/30 hover:border-muted-foreground/50 transition-colors">
                       <CardContent className="space-y-3 p-5">
-                        <Label className="uppercase tracking-[0.15em] text-[11px] text-muted-foreground font-semibold">小龙虾代用</Label>
-                        <div className="text-xl font-bold tracking-tight text-foreground">CodeX OS / 小龙虾</div>
-                        <p className="text-[13px] leading-relaxed text-muted-foreground">来自小龙虾代用链路的本地聚合结果。</p>
+                        <Label className="uppercase tracking-[0.15em] text-[11px] text-muted-foreground font-semibold">小龙虾主脑</Label>
+                        <div className="text-xl font-bold tracking-tight text-foreground">CodeX OS / 小龙虾主脑</div>
+                        <p className="text-[13px] leading-relaxed text-muted-foreground">来自小龙虾主脑链路的本地聚合结果。</p>
                       </CardContent>
                     </Card>
                   </div>
@@ -538,7 +620,7 @@ export function CodexDashboard({
                 <div className="grid gap-4 sm:gap-6 xl:gap-8 xl:grid-cols-2 pt-2">
                   <Card className="rounded-xl shadow-none border-border/50">
                     <CardHeader className="pb-4 sm:pb-5 bg-card rounded-t-xl border-b">
-                      <CardTitle className="text-[16px] tracking-tight">我直接使用 Codex</CardTitle>
+                      <CardTitle className="text-[16px] tracking-tight">Codex 编程</CardTitle>
                       <CardDescription className="text-xs">按日汇总 · 最近 14 天</CardDescription>
                     </CardHeader>
                     <CardContent className="pt-4 sm:pt-5 bg-card/40">
@@ -547,11 +629,11 @@ export function CodexDashboard({
                   </Card>
                   <Card className="rounded-xl shadow-none border-border/50">
                     <CardHeader className="pb-4 sm:pb-5 bg-card rounded-t-xl border-b">
-                      <CardTitle className="text-[16px] tracking-tight">小龙虾代用</CardTitle>
+                      <CardTitle className="text-[16px] tracking-tight">小龙虾主脑</CardTitle>
                       <CardDescription className="text-xs">按日汇总 · 最近 14 天</CardDescription>
                     </CardHeader>
                     <CardContent className="pt-4 sm:pt-5 bg-card/40">
-                      <LedgerBillingTable rows={(snapshot.openclaw?.daily || []).slice(0, 14)} emptyCopy="暂无小龙虾代用账单数据。" />
+                      <LedgerBillingTable rows={(snapshot.openclaw?.daily || []).slice(0, 14)} emptyCopy="暂无小龙虾主脑账单数据。" />
                     </CardContent>
                   </Card>
                 </div>

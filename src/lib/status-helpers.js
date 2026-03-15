@@ -139,5 +139,5 @@ export function ledgerStateVariant(stateLabel) {
 }
 
 export function getLedgerOriginLabel(origin) {
-  return origin === "openclaw-oauth" ? "小龙虾代用" : "我直接使用 Codex";
+  return origin === "openclaw-oauth" ? "小龙虾主脑" : "Codex 编程";
 }
