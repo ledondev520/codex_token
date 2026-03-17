@@ -19,7 +19,10 @@ function runSqliteJson(dbPath, query) {
   return stdout ? JSON.parse(stdout) : [];
 }
 
-function getThreadSummary(stateDbPath) {
+function getThreadSummary(stateDbPath, options = {}) {
+  const includeArchived = Boolean(options.includeArchived);
+  const archivedFilter = includeArchived ? "" : "WHERE archived = 0";
+
   const [overview = { total_threads: 0, total_tokens: 0 }] = runSqliteJson(
     stateDbPath,
     `
@@ -28,7 +31,7 @@ function getThreadSummary(stateDbPath) {
         COALESCE(SUM(tokens_used), 0) AS total_tokens,
         MAX(updated_at) AS latest_updated_at
       FROM threads
-      WHERE archived = 0;
+      ${archivedFilter};
     `
   );
 
@@ -70,6 +73,36 @@ function getRecentThreads(stateDbPath, limit = null) {
     createdAt: Number(row.created_at),
     updatedAt: Number(row.updated_at),
   }));
+}
+
+function getThreadMetadata(stateDbPath, options = {}) {
+  const includeArchived = Boolean(options.includeArchived);
+  const archivedFilter = includeArchived ? "" : "WHERE archived = 0";
+
+  const rows = runSqliteJson(
+    stateDbPath,
+    `
+      SELECT id, source, cwd
+      FROM threads
+      ${archivedFilter};
+    `
+  );
+
+  const map = new Map();
+  for (const row of rows) {
+    const id = String(row?.id || "").trim();
+    if (!id) {
+      continue;
+    }
+
+    map.set(id, {
+      id,
+      source: String(row.source || ""),
+      cwd: String(row.cwd || ""),
+    });
+  }
+
+  return map;
 }
 
 function normalizeInlineText(value) {
@@ -115,7 +148,7 @@ function classifyUsageOrigin({ cwd, source, modelName }) {
     return {
       kind: "openclaw-oauth",
       label: "小龙虾主脑",
-      description: "来自 CodeX OS / 小龙虾主脑的 Codex 开销",
+      description: "包含 OpenClaw 主脑会话消耗，以及主脑进一步调用 Codex 产生的开销",
     };
   }
 
@@ -126,7 +159,11 @@ function classifyUsageOrigin({ cwd, source, modelName }) {
   };
 }
 
-function getDailyUsage(stateDbPath, days = 14) {
+function getDailyUsage(stateDbPath, days = 14, options = {}) {
+  const includeArchived = Boolean(options.includeArchived);
+  const archivedFilter = includeArchived ? "" : "WHERE archived = 0";
+  const safeDays = Number(days) > 0 ? Number(days) : 14;
+
   const rows = runSqliteJson(
     stateDbPath,
     `
@@ -135,10 +172,10 @@ function getDailyUsage(stateDbPath, days = 14) {
         COUNT(*) AS total_threads,
         COALESCE(SUM(tokens_used), 0) AS total_tokens
       FROM threads
-      WHERE archived = 0
+      ${archivedFilter}
       GROUP BY day
       ORDER BY day DESC
-      LIMIT ${Number(days)};
+      LIMIT ${safeDays};
     `
   );
 
@@ -552,6 +589,8 @@ function extractSessionDetails(filePath, options = {}) {
     rateLimitsAt: null,
     modelName: null,
     modelAt: null,
+    cwd: null,
+    source: null,
     promptText: null,
     promptAt: null,
     userMessages: [],
@@ -574,6 +613,8 @@ function extractSessionDetails(filePath, options = {}) {
     if (parsed.type === "session_meta") {
       details.threadId = parsed.payload?.id || details.threadId;
       details.modelProvider = parsed.payload?.model_provider || details.modelProvider;
+      details.cwd = parsed.payload?.cwd || details.cwd;
+      details.source = parsed.payload?.source || details.source;
       continue;
     }
 
@@ -742,6 +783,82 @@ function mergeSessionDetails(existing, incoming) {
   return merged;
 }
 
+function buildLedgerAccumulator() {
+  return {
+    totalTokens: 0,
+    inputTokens: 0,
+    cachedInputTokens: 0,
+    outputTokens: 0,
+    totalUsd: 0,
+    modelsUsed: null,
+    modelBreakdowns: null,
+  };
+}
+
+function addLedgerEntry(targetByDay, day, entry, options = {}) {
+  if (!day) {
+    return;
+  }
+
+  const existing = targetByDay.get(day) || buildLedgerAccumulator();
+  existing.totalTokens += Number(entry.tokenUsage.totalTokens || 0);
+  existing.inputTokens += Number(entry.tokenUsage.inputTokens || 0);
+  existing.cachedInputTokens += Number(entry.tokenUsage.cachedInputTokens || 0);
+  existing.outputTokens += Number(entry.tokenUsage.outputTokens || 0);
+  existing.totalUsd += Number(entry.cost?.totalUsd || 0);
+
+  if (options.trackModelUsage && entry.modelName) {
+    if (existing.modelsUsed === null) {
+      existing.modelsUsed = new Set();
+      existing.modelBreakdowns = new Map();
+    }
+
+    existing.modelsUsed.add(entry.modelName);
+    const currentModelCost = existing.modelBreakdowns.get(entry.modelName) || 0;
+    existing.modelBreakdowns.set(entry.modelName, currentModelCost + Number(entry.cost?.totalUsd || 0));
+  }
+
+  targetByDay.set(day, existing);
+}
+
+function finalizeLedgerRows(rowsByDay, includeModelUsage = false) {
+  const rows = Array.from(rowsByDay.entries()).map(([day, values]) => {
+    const row = {
+      day,
+      totalTokens: values.totalTokens,
+      inputTokens: values.inputTokens,
+      cachedInputTokens: values.cachedInputTokens,
+      outputTokens: values.outputTokens,
+      totalUsd: values.totalUsd,
+    };
+
+    if (includeModelUsage) {
+      if (values.modelsUsed) {
+        row.modelsUsed = Array.from(values.modelsUsed).sort();
+      }
+
+      if (values.modelBreakdowns) {
+        row.modelBreakdowns = Array.from(values.modelBreakdowns.entries())
+          .map(([modelName, totalUsd]) => ({
+            modelName,
+            totalUsd: Number(totalUsd || 0),
+          }))
+          .sort((left, right) => {
+            if (right.totalUsd !== left.totalUsd) {
+              return right.totalUsd - left.totalUsd;
+            }
+
+            return String(left.modelName).localeCompare(String(right.modelName));
+          });
+      }
+    }
+
+    return row;
+  });
+
+  return rows.sort((left, right) => right.day.localeCompare(left.day));
+}
+
 function buildRecentSessionMap(sessionsDir, archivedSessionsDir, options = {}) {
   const targetThreadIds = new Set(
     Array.isArray(options.targetThreadIds)
@@ -777,6 +894,9 @@ function buildRecentSessionMap(sessionsDir, archivedSessionsDir, options = {}) {
 }
 
 function buildDailyLedger(sessionsDir, archivedSessionsDir, options = {}) {
+  const threadMetadata = options.threadMetadata instanceof Map
+    ? options.threadMetadata
+    : new Map(Array.isArray(options.threadMetadata) ? options.threadMetadata : []);
   const files = [
     ...listJsonlFiles(sessionsDir),
     ...listJsonlFiles(archivedSessionsDir),
@@ -785,6 +905,7 @@ function buildDailyLedger(sessionsDir, archivedSessionsDir, options = {}) {
     .slice(-(options.ledgerFileLimit || Number.MAX_SAFE_INTEGER));
 
   const byDay = new Map();
+  const openclawByDay = new Map();
   const usedModels = new Set();
 
   for (const file of files) {
@@ -792,29 +913,252 @@ function buildDailyLedger(sessionsDir, archivedSessionsDir, options = {}) {
     for (const modelName of details?.modelsUsed || []) {
       usedModels.add(modelName);
     }
-    for (const entry of details?.ledgerEntries || []) {
-      const existing = byDay.get(entry.day) || {
-        day: entry.day,
-        totalTokens: 0,
-        inputTokens: 0,
-        cachedInputTokens: 0,
-        outputTokens: 0,
-        totalUsd: 0,
-      };
 
-      existing.totalTokens += entry.tokenUsage.totalTokens;
-      existing.inputTokens += entry.tokenUsage.inputTokens;
-      existing.cachedInputTokens += entry.tokenUsage.cachedInputTokens;
-      existing.outputTokens += entry.tokenUsage.outputTokens;
-      existing.totalUsd += entry.cost?.totalUsd || 0;
-      byDay.set(entry.day, existing);
+    for (const entry of details?.ledgerEntries || []) {
+      const threadMeta = threadMetadata.get(String(details.threadId || "")) || {};
+      const source = threadMeta.source || details.source || "";
+      const cwd = threadMeta.cwd || details.cwd || file.path;
+      const usageOrigin = classifyUsageOrigin({
+        source,
+        cwd,
+        modelName: entry.modelName || details.modelName,
+      });
+      const isOpenClaw = usageOrigin.kind === "openclaw-oauth";
+
+      addLedgerEntry(isOpenClaw ? openclawByDay : byDay, entry.day, entry, {
+        trackModelUsage: isOpenClaw,
+      });
     }
   }
 
   return {
-    rows: Array.from(byDay.values()).sort((left, right) => right.day.localeCompare(left.day)),
+    rows: finalizeLedgerRows(byDay),
+    openclawRows: finalizeLedgerRows(openclawByDay, true),
     usedModels: Array.from(usedModels).sort(),
   };
+}
+
+function mergeOpenClawUsage(openclawSnapshot, localRows, nowIso) {
+  const sourceRows = Array.isArray(localRows) ? localRows : [];
+  if (!sourceRows.length && !openclawSnapshot) {
+    return null;
+  }
+
+  if (!openclawSnapshot) {
+    const baseRows = sourceRows.map((row) => ({
+      day: row.day,
+      totalTokens: Number(row.totalTokens || 0),
+      inputTokens: Number(row.inputTokens || 0),
+      outputTokens: Number(row.outputTokens || 0),
+      cachedInputTokens: Number(row.cachedInputTokens || 0),
+      totalUsd: Number(row.totalUsd || 0),
+      modelsUsed: Array.isArray(row.modelsUsed)
+        ? row.modelsUsed.slice().sort()
+        : [],
+      modelBreakdowns: Array.isArray(row.modelBreakdowns)
+        ? row.modelBreakdowns
+            .filter((entry) => entry?.modelName)
+            .map((entry) => ({
+              modelName: String(entry.modelName),
+              totalUsd: Number(entry.totalUsd || 0),
+            }))
+        : [],
+    }));
+
+    const dailyTotals = summarizeDailyRows(baseRows);
+    return {
+      provider: "codex",
+      source: "local",
+      updatedAt: nowIso || null,
+      configuredModel: null,
+      session: {
+        totalTokens: dailyTotals.totalTokens,
+        totalUsd: dailyTotals.totalUsd,
+      },
+      totals: {
+        inputTokens: dailyTotals.inputTokens,
+        outputTokens: dailyTotals.outputTokens,
+        totalTokens: dailyTotals.totalTokens,
+        totalUsd: dailyTotals.totalUsd,
+      },
+      daily: baseRows,
+      topModels: deriveTopModelsFromDailyRows(baseRows),
+    };
+  }
+
+  const cloneLedgerRow = (row) => ({
+    day: row.day,
+    totalTokens: Number(row.totalTokens || 0),
+    inputTokens: Number(row.inputTokens || 0),
+    outputTokens: Number(row.outputTokens || 0),
+    cachedInputTokens: Number(row.cachedInputTokens || 0),
+    totalUsd: Number(row.totalUsd || 0),
+    modelsUsed: Array.isArray(row.modelsUsed) ? Array.from(new Set(row.modelsUsed.filter(Boolean))) : [],
+    modelBreakdowns: Array.isArray(row.modelBreakdowns)
+      ? row.modelBreakdowns
+          .filter((entry) => entry?.modelName)
+          .map((entry) => ({
+            modelName: String(entry.modelName),
+            totalUsd: Number(entry.totalUsd || 0),
+          }))
+      : [],
+  });
+
+  const mergeRowsByMode = (rows, mode = "sum") => {
+    const byDay = new Map();
+
+    for (const row of Array.isArray(rows) ? rows : []) {
+      if (!row?.day) {
+        continue;
+      }
+
+      const normalizedRow = cloneLedgerRow(row);
+      const existing = byDay.get(normalizedRow.day);
+      if (!existing) {
+        byDay.set(normalizedRow.day, normalizedRow);
+        continue;
+      }
+
+      if (mode === "max") {
+        existing.totalTokens = Math.max(existing.totalTokens, normalizedRow.totalTokens);
+        existing.inputTokens = Math.max(existing.inputTokens, normalizedRow.inputTokens);
+        existing.outputTokens = Math.max(existing.outputTokens, normalizedRow.outputTokens);
+        existing.cachedInputTokens = Math.max(existing.cachedInputTokens, normalizedRow.cachedInputTokens);
+        existing.totalUsd = Math.max(existing.totalUsd, normalizedRow.totalUsd);
+      } else {
+        existing.totalTokens += normalizedRow.totalTokens;
+        existing.inputTokens += normalizedRow.inputTokens;
+        existing.outputTokens += normalizedRow.outputTokens;
+        existing.cachedInputTokens += normalizedRow.cachedInputTokens;
+        existing.totalUsd += normalizedRow.totalUsd;
+      }
+
+      existing.modelsUsed = Array.from(
+        new Set([...(existing.modelsUsed || []), ...(normalizedRow.modelsUsed || [])].filter(Boolean))
+      );
+
+      const breakdownByModel = new Map();
+      for (const entry of existing.modelBreakdowns || []) {
+        breakdownByModel.set(String(entry.modelName), Number(entry.totalUsd || 0));
+      }
+      for (const entry of normalizedRow.modelBreakdowns || []) {
+        const modelName = String(entry.modelName);
+        const value = Number(entry.totalUsd || 0);
+        breakdownByModel.set(
+          modelName,
+          mode === "max"
+            ? Math.max(breakdownByModel.get(modelName) || 0, value)
+            : (breakdownByModel.get(modelName) || 0) + value
+        );
+      }
+
+      existing.modelBreakdowns = Array.from(breakdownByModel.entries())
+        .map(([modelName, totalUsd]) => ({
+          modelName,
+          totalUsd,
+        }))
+        .sort((left, right) => {
+          if (right.totalUsd !== left.totalUsd) {
+            return right.totalUsd - left.totalUsd;
+          }
+
+          return String(left.modelName).localeCompare(String(right.modelName));
+        });
+    }
+
+    return finalizeLedgerRows(byDay);
+  };
+
+  const segmentedCodexRows = Array.isArray(openclawSnapshot.segments?.codexDaily)
+    ? openclawSnapshot.segments.codexDaily
+    : null;
+  const segmentedMainRows = Array.isArray(openclawSnapshot.segments?.mainDaily)
+    ? openclawSnapshot.segments.mainDaily
+    : null;
+
+  const mergedRows = segmentedCodexRows || segmentedMainRows
+    ? mergeRowsByMode(
+        [
+          ...(segmentedMainRows || []),
+          ...mergeRowsByMode([...(segmentedCodexRows || []), ...sourceRows], "max"),
+        ],
+        "sum"
+      )
+    : mergeRowsByMode([...(Array.isArray(openclawSnapshot.daily) ? openclawSnapshot.daily : []), ...sourceRows], "max");
+  const mergedTotals = summarizeDailyRows(mergedRows);
+  const mergedTopModels = deriveTopModelsFromDailyRows(mergedRows);
+
+  return {
+    ...openclawSnapshot,
+    topModels: mergedTopModels.length ? mergedTopModels : openclawSnapshot.topModels || [],
+    totals: {
+      ...openclawSnapshot.totals,
+      inputTokens: Number(mergedTotals.inputTokens || 0),
+      outputTokens: Number(mergedTotals.outputTokens || 0),
+      cachedInputTokens: Number(mergedTotals.cachedInputTokens || 0),
+      totalTokens: Number(mergedTotals.totalTokens || 0),
+      totalUsd: Number(mergedTotals.totalUsd || 0),
+    },
+    session: openclawSnapshot.session || {
+      totalTokens: Number(openclawSnapshot.totals?.totalTokens || 0),
+      totalUsd: Number(openclawSnapshot.totals?.totalUsd || 0),
+    },
+    segments: {
+      codexDaily: mergeRowsByMode([...(segmentedCodexRows || []), ...sourceRows], "max"),
+      mainDaily: segmentedMainRows || [],
+    },
+    daily: mergedRows,
+  };
+}
+
+function summarizeDailyRows(rows) {
+  return rows.reduce(
+    (summary, row) => {
+      summary.totalTokens += Number(row.totalTokens || 0);
+      summary.inputTokens += Number(row.inputTokens || 0);
+      summary.cachedInputTokens += Number(row.cachedInputTokens || 0);
+      summary.outputTokens += Number(row.outputTokens || 0);
+      summary.totalUsd += Number(row.totalUsd || 0);
+      return summary;
+    },
+    {
+      totalTokens: 0,
+      inputTokens: 0,
+      cachedInputTokens: 0,
+      outputTokens: 0,
+      totalUsd: 0,
+    }
+  );
+}
+
+function deriveTopModelsFromDailyRows(rows) {
+  const totals = new Map();
+
+  for (const row of rows) {
+    for (const breakdown of row.modelBreakdowns || []) {
+      if (!breakdown?.modelName) {
+        continue;
+      }
+
+      totals.set(
+        String(breakdown.modelName),
+        (totals.get(String(breakdown.modelName)) || 0) + Number(breakdown.totalUsd || 0)
+      );
+    }
+  }
+
+  return Array.from(totals.entries())
+    .map(([modelName, totalUsd]) => ({
+      modelName,
+      totalUsd: Number(totalUsd || 0),
+    }))
+    .sort((left, right) => {
+      if (right.totalUsd !== left.totalUsd) {
+        return right.totalUsd - left.totalUsd;
+      }
+
+      return String(left.modelName).localeCompare(String(right.modelName));
+    });
 }
 
 function getLatestLiveEvent(sessionMap) {
@@ -875,7 +1219,10 @@ async function loadSnapshot(options = {}) {
   const paths = resolveCodexPaths(options.codexHome);
   const timeZone = options.timeZone || Intl.DateTimeFormat().resolvedOptions().timeZone;
   const loadOpenClawUsageFn = options.loadOpenClawUsageFn || loadOpenClawUsageSnapshot;
-  const overview = getThreadSummary(paths.stateDbPath);
+  const includeArchived = options.includeArchived ?? true;
+  const overview = getThreadSummary(paths.stateDbPath, {
+    includeArchived,
+  });
   const recentThreadsBase = getRecentThreads(paths.stateDbPath, options.recentThreadsLimit);
   const recentSessionMap = options.skipSessionParsing
     ? new Map()
@@ -889,9 +1236,10 @@ async function loadSnapshot(options = {}) {
       );
   const dailyLedger = options.skipSessionParsing
     ? { rows: [], usedModels: [] }
-    : buildDailyLedger(paths.sessionsDir, paths.archivedSessionsDir, {
+      : buildDailyLedger(paths.sessionsDir, paths.archivedSessionsDir, {
         timeZone,
         ledgerFileLimit: options.ledgerFileLimit,
+        threadMetadata: getThreadMetadata(paths.stateDbPath, { includeArchived }),
       });
   const decision = options.skipSessionParsing
     ? {
@@ -930,6 +1278,7 @@ async function loadSnapshot(options = {}) {
       openclaw = null;
     }
   }
+  openclaw = mergeOpenClawUsage(openclaw, dailyLedger.openclawRows, options.now?.toISOString?.());
   overview.totalEstimatedCost = dailyLedger.rows.reduce((sum, item) => sum + item.totalUsd, 0);
   const pricingCatalog = buildPricingCatalog(dailyLedger.usedModels);
   const recentThreads = recentThreadsBase.map(
@@ -953,7 +1302,9 @@ async function loadSnapshot(options = {}) {
     }
   );
   const threadsById = new Map(recentThreads.map((thread) => [thread.id, thread]));
-  const dailyUsage = getDailyUsage(paths.stateDbPath, options.dailyUsageLimit || 14);
+  const dailyUsage = getDailyUsage(paths.stateDbPath, options.dailyUsageLimit || 14, {
+    includeArchived,
+  });
   const liveThread = latestLiveEvent.currentSession?.threadId
     ? threadsById.get(latestLiveEvent.currentSession.threadId)
     : null;

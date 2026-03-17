@@ -334,11 +334,11 @@ export function CodexDashboard({
   return (
     <>
       <div className="grid min-w-0 gap-5 lg:gap-8 xl:gap-10">
-        <SectionCard title="双账本总览" description="把你直接使用 Codex 和小龙虾主脑的开销拆开看。">
+        <SectionCard title="双账本总览" description="拆开看你直接使用 Codex 的消耗，以及小龙虾主脑自身消耗加代跑 Codex 的总账。">
           <div className="grid gap-4 xl:gap-6 xl:grid-cols-2">
             <LedgerOverviewCard
               title="Codex 编程"
-              subtitle="直接来自本地 Codex 会话与限额快照。"
+              subtitle="仅包含你直接使用本地 Codex 会话产生的 token 与费用。"
               stateLabel={codexStateLabel}
               metrics={codexMetrics}
               sessions={codexRuntimeSessions}
@@ -348,7 +348,7 @@ export function CodexDashboard({
             />
             <LedgerOverviewCard
               title="小龙虾主脑"
-              subtitle="来自 CodeX OS / 小龙虾主脑的 Codex 开销。"
+              subtitle="包含 OpenClaw 主脑会话 token，以及主脑继续调用 Codex 产生的费用。"
               stateLabel={lobsterStateLabel}
               metrics={lobsterMetrics}
               sessions={lobsterRuntimeSessions}
@@ -516,14 +516,14 @@ export function CodexDashboard({
                       <CardContent className="space-y-3 p-5">
                         <Label className="uppercase tracking-[0.15em] text-[11px] text-muted-foreground font-semibold">Codex 编程</Label>
                         <div className="text-xl font-bold tracking-tight text-foreground">Codex 本地</div>
-                        <p className="text-[13px] leading-relaxed text-muted-foreground">来自 <code className="bg-muted px-1.5 py-0.5 rounded font-mono text-[11px] border shadow-sm">~/.codex</code> 的 SQLite 与 session JSONL。</p>
+                        <p className="text-[13px] leading-relaxed text-muted-foreground">仅统计 <code className="bg-muted px-1.5 py-0.5 rounded font-mono text-[11px] border shadow-sm">~/.codex</code> 下你直接使用 Codex 编程的 SQLite 与 session JSONL。</p>
                       </CardContent>
                     </Card>
                     <Card className="rounded-xl bg-card border-dashed shadow-sm border-muted-foreground/30 hover:border-muted-foreground/50 transition-colors">
                       <CardContent className="space-y-3 p-5">
                         <Label className="uppercase tracking-[0.15em] text-[11px] text-muted-foreground font-semibold">小龙虾主脑</Label>
                         <div className="text-xl font-bold tracking-tight text-foreground">CodeX OS / 小龙虾主脑</div>
-                        <p className="text-[13px] leading-relaxed text-muted-foreground">来自小龙虾主脑链路的本地聚合结果。</p>
+                        <p className="text-[13px] leading-relaxed text-muted-foreground">聚合 <code className="bg-muted px-1.5 py-0.5 rounded font-mono text-[11px] border shadow-sm">~/.openclaw/agents/main/sessions</code> 主脑会话 usage，以及主脑继续调用 Codex 的账单。</p>
                       </CardContent>
                     </Card>
                   </div>
