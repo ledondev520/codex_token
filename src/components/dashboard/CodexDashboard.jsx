@@ -274,7 +274,15 @@ export function CodexDashboard({
     { label: "当前活跃", value: snapshot.openclaw ? formatTokenRaw(lobsterRuntimeSessions.length) : "-", subvalue: snapshot.openclaw?.updatedAt ? `最近同步 ${new Date(snapshot.openclaw.updatedAt).toLocaleString("zh-CN")}` : "未读取到小龙虾主脑数据", tone: "teal" },
   ];
 
-  const billingRows = workbenchLedger === "openclaw-oauth" ? snapshot.openclaw?.daily || [] : snapshot.dailyLedger || [];
+  const billingRows = useMemo(() => {
+    const raw = workbenchLedger === "openclaw-oauth" ? snapshot.openclaw?.daily : snapshot.dailyLedger;
+    // Fallback if the main ledger is empty but we have basic usage stats
+    if ((!raw || raw.length === 0) && workbenchLedger === "codex-local") {
+      return snapshot.dailyUsage || [];
+    }
+    return raw || [];
+  }, [snapshot.dailyLedger, snapshot.dailyUsage, snapshot.openclaw?.daily, workbenchLedger]);
+
   const workbenchSummary = getWindowSummary(billingRows, snapshot.generatedAt);
 
   const allTimeSummary = useMemo(() => {

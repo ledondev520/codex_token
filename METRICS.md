@@ -1,6 +1,6 @@
 # Metrics
 
-Last updated: 2026-03-14 14:41 Asia/Shanghai
+Last updated: 2026-03-17 21:25 Asia/Shanghai
 
 | Round | Metric | Value | Notes |
 | --- | --- | --- | --- |
@@ -115,3 +115,15 @@ Last updated: 2026-03-14 14:41 Asia/Shanghai
 | 33 | Dual-ledger regression | 36 passing | `node --test test/dashboardView.test.js` on 2026-03-14 14:36 Asia/Shanghai after introducing `我直接使用 Codex` / `小龙虾代用`, ledger-scoped workbench, and clickable running-session cards |
 | 33 | Full verification | 49 passing | `npm test` on 2026-03-14 14:40 Asia/Shanghai after the dual-ledger refactor pass |
 | 33 | Browser smoke | pass | Playwright browser snapshot on `http://127.0.0.1:4329/` confirmed the dual-ledger homepage, top-level session-detail entry, ledger-scoped workbench tabs, and collapsed advanced-detail triggers |
+| 34 | Session model backfill regression | 8 passing | `node --test test/usageRepository.test.js` on 2026-03-17 20:14 Asia/Shanghai after switching recent-session parsing from a fixed 40-file slice to recent-thread-targeted JSONL lookup |
+| 34 | Dashboard source regression | 36 passing | `node --test test/dashboardView.test.js` on 2026-03-17 20:20 Asia/Shanghai after correcting GPT-5 label formatting and aligning source assertions to the current component structure |
+| 34 | Full verification | 50 passing | `npm test` on 2026-03-17 20:23 Asia/Shanghai after removing temporary debug residue and restoring all-session model names |
+| 35 | Source-routing regression | 8 passing | `node --test test/usageRepository.test.js` on 2026-03-17 20:33 Asia/Shanghai after removing model-name-based ledger routing so local GPT-5 sessions remain under `Codex 编程` |
+| 35 | Live snapshot spot-check | pass | `loadSnapshot({ codexHome: ~/.codex, recentThreadsLimit: 50 })` on 2026-03-17 20:40 Asia/Shanghai returned `codex-local: 34`, `openclaw-oauth: 16`; the current workspace thread `/Users/helena/Cursor/codex_token` is now classified as `codex-local` |
+| 35 | Full verification | 50 passing | `npm test` on 2026-03-17 20:49 Asia/Shanghai after fixing ledger source classification |
+| 36 | Background refresh regression | 3 passing | `node --test test/liveSnapshotService.test.js` on 2026-03-17 21:00 Asia/Shanghai after preventing overlapping background refresh workers |
+| 36 | Background worker runtime | pass | `loadSnapshotInBackground({ refreshIntervalMs: 5000, recentSessionFileLimit: 40, ledgerFileLimit: 217 })` on 2026-03-17 21:01 Asia/Shanghai completed in 24.8s with `codex-local: 268/268 with model`, `openclaw-oauth: 50/50 with model` |
+| 36 | Live 4329 refresh | pass | `POST http://127.0.0.1:4329/api/refresh` on 2026-03-17 21:03 Asia/Shanghai returned `loading=false`, `codex-local: 268`, `openclaw-oauth: 50`, and populated model names after restarting the LaunchAgent |
+| 36 | Full verification | 51 passing | `npm test` on 2026-03-17 21:04 Asia/Shanghai after fixing live refresh timeout/buffer limits and de-duplicating in-flight background refreshes |
+| 37 | Remote snapshot app regression | 2 passing | `node --test test/app.test.js` on 2026-03-17 21:20 Asia/Shanghai after adding file-backed remote snapshot mode and token-protected upload coverage |
+| 37 | Full verification | 52 passing | `npm test` on 2026-03-17 21:25 Asia/Shanghai after adding compact remote snapshot upload support |

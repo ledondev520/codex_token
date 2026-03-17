@@ -106,15 +106,11 @@ function formatWorkspaceLabel(cwd) {
 function classifyUsageOrigin({ cwd, source, modelName }) {
   const normalizedCwd = String(cwd || "").trim();
   const normalizedSource = String(source || "").trim().toLowerCase();
-  const normalizedModel = String(modelName || "").trim().toLowerCase();
-
-  const isLobsterModel = normalizedModel.includes("gpt-5") || normalizedModel.includes("gpt5");
 
   if (
     normalizedCwd.includes("/.openclaw/") ||
     normalizedCwd.includes("\\.openclaw\\") ||
-    normalizedSource === "oauth" ||
-    isLobsterModel
+    normalizedSource === "oauth"
   ) {
     return {
       kind: "openclaw-oauth",
@@ -746,19 +742,31 @@ function mergeSessionDetails(existing, incoming) {
   return merged;
 }
 
-function buildRecentSessionMap(sessionsDir, archivedSessionsDir, fileLimit = 40) {
+function buildRecentSessionMap(sessionsDir, archivedSessionsDir, options = {}) {
+  const targetThreadIds = new Set(
+    Array.isArray(options.targetThreadIds)
+      ? options.targetThreadIds.filter(Boolean).map((value) => String(value))
+      : []
+  );
+  const hasTargetThreadIds = targetThreadIds.size > 0;
+  const fileLimit = hasTargetThreadIds ? null : options.fileLimit ?? 40;
   const files = [
     ...listJsonlFiles(sessionsDir),
     ...listJsonlFiles(archivedSessionsDir),
   ]
-    .sort((left, right) => right.mtimeMs - left.mtimeMs)
-    .slice(0, fileLimit);
+    .sort((left, right) => right.mtimeMs - left.mtimeMs);
+  const hasFileLimit = fileLimit !== null && fileLimit !== undefined && Number.isFinite(Number(fileLimit));
+  const selectedFiles = hasFileLimit ? files.slice(0, Number(fileLimit)) : files;
 
   const byThreadId = new Map();
 
-  for (const file of files) {
+  for (const file of selectedFiles) {
     const details = extractSessionDetails(file.path);
     if (!details?.threadId) {
+      continue;
+    }
+
+    if (hasTargetThreadIds && !targetThreadIds.has(String(details.threadId))) {
       continue;
     }
 
@@ -868,12 +876,16 @@ async function loadSnapshot(options = {}) {
   const timeZone = options.timeZone || Intl.DateTimeFormat().resolvedOptions().timeZone;
   const loadOpenClawUsageFn = options.loadOpenClawUsageFn || loadOpenClawUsageSnapshot;
   const overview = getThreadSummary(paths.stateDbPath);
+  const recentThreadsBase = getRecentThreads(paths.stateDbPath, options.recentThreadsLimit);
   const recentSessionMap = options.skipSessionParsing
     ? new Map()
     : buildRecentSessionMap(
         paths.sessionsDir,
         paths.archivedSessionsDir,
-        options.recentSessionFileLimit || 40
+        {
+          fileLimit: options.recentSessionFileLimit || 40,
+          targetThreadIds: recentThreadsBase.map((thread) => thread.id),
+        }
       );
   const dailyLedger = options.skipSessionParsing
     ? { rows: [], usedModels: [] }
@@ -920,7 +932,7 @@ async function loadSnapshot(options = {}) {
   }
   overview.totalEstimatedCost = dailyLedger.rows.reduce((sum, item) => sum + item.totalUsd, 0);
   const pricingCatalog = buildPricingCatalog(dailyLedger.usedModels);
-  const recentThreads = getRecentThreads(paths.stateDbPath, options.recentThreadsLimit).map(
+  const recentThreads = recentThreadsBase.map(
     (thread) => {
       const sessionDetails = recentSessionMap.get(thread.id);
       const usageOrigin = classifyUsageOrigin({ ...thread, modelName: sessionDetails?.modelName });
@@ -946,7 +958,7 @@ async function loadSnapshot(options = {}) {
     ? threadsById.get(latestLiveEvent.currentSession.threadId)
     : null;
 
-  return {
+  const result = {
     generatedAt: (options.now || new Date()).toISOString(),
     sources: {
       codexHome: paths.codexHome,
@@ -984,6 +996,7 @@ async function loadSnapshot(options = {}) {
     recentThreads,
     dailyUsage,
   };
+  return result;
 }
 
 module.exports = {

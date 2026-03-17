@@ -17,6 +17,11 @@ function writeJsonl(filePath, rows) {
   fs.writeFileSync(filePath, rows.map((row) => JSON.stringify(row)).join("\n"));
 }
 
+function setFileMtime(filePath, isoTimestamp) {
+  const time = new Date(isoTimestamp);
+  fs.utimesSync(filePath, time, time);
+}
+
 function createSqliteDb(dbPath) {
   fs.mkdirSync(path.dirname(dbPath), { recursive: true });
   execFileSync("sqlite3", [
@@ -218,6 +223,96 @@ test("loadSnapshot aggregates sqlite history and latest live token/rate-limit ev
   assert.equal(snapshot.pricingCatalog[0].inputPerMillion, 1.25);
 });
 
+test("loadSnapshot keeps model names for recent threads even when unrelated newer session files exist", async () => {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "codex-recent-models-"));
+  const codexHome = path.join(tempDir, ".codex");
+  const dbPath = path.join(codexHome, "state_5.sqlite");
+  fs.mkdirSync(path.dirname(dbPath), { recursive: true });
+  execFileSync("sqlite3", [
+    dbPath,
+    `
+      CREATE TABLE threads (
+        id TEXT PRIMARY KEY,
+        rollout_path TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL,
+        source TEXT NOT NULL,
+        model_provider TEXT NOT NULL,
+        cwd TEXT NOT NULL,
+        title TEXT NOT NULL,
+        sandbox_policy TEXT NOT NULL,
+        approval_mode TEXT NOT NULL,
+        tokens_used INTEGER NOT NULL DEFAULT 0,
+        has_user_event INTEGER NOT NULL DEFAULT 0,
+        archived INTEGER NOT NULL DEFAULT 0,
+        archived_at INTEGER
+      );
+      INSERT INTO threads (
+        id, rollout_path, created_at, updated_at, source, model_provider, cwd, title,
+        sandbox_policy, approval_mode, tokens_used, has_user_event, archived, archived_at
+      ) VALUES
+        ('thread-target-1', '/tmp/target-1.jsonl', 1773453600, 1773457200, 'vscode', 'openai', '/workspace/alpha', 'alpha thread', 'danger', 'never', 1200, 1, 0, NULL),
+        ('thread-target-2', '/tmp/target-2.jsonl', 1773453900, 1773457500, 'vscode', 'openai', '/workspace/beta', 'beta thread', 'danger', 'never', 800, 1, 0, NULL);
+    `,
+  ]);
+
+  const target1Path = path.join(codexHome, "sessions", "2026", "03", "13", "thread-target-1.jsonl");
+  const target2Path = path.join(codexHome, "sessions", "2026", "03", "13", "thread-target-2.jsonl");
+
+  writeJsonl(target1Path, [
+    { timestamp: "2026-03-13T02:00:00.000Z", type: "session_meta", payload: { id: "thread-target-1", model_provider: "openai" } },
+    { timestamp: "2026-03-13T02:00:01.000Z", type: "turn_context", payload: { turn_id: "turn-target-1", model: "gpt-5.3-codex" } },
+    { timestamp: "2026-03-13T02:00:02.000Z", type: "event_msg", payload: { type: "user_message", message: "alpha prompt" } },
+  ]);
+  writeJsonl(target2Path, [
+    { timestamp: "2026-03-13T02:10:00.000Z", type: "session_meta", payload: { id: "thread-target-2", model_provider: "openai" } },
+    { timestamp: "2026-03-13T02:10:01.000Z", type: "turn_context", payload: { turn_id: "turn-target-2", model: "gpt-5.4" } },
+    { timestamp: "2026-03-13T02:10:02.000Z", type: "event_msg", payload: { type: "user_message", message: "beta prompt" } },
+  ]);
+  setFileMtime(target1Path, "2026-03-13T02:00:10.000Z");
+  setFileMtime(target2Path, "2026-03-13T02:10:10.000Z");
+
+  for (let index = 0; index < 41; index += 1) {
+    const noisePath = path.join(
+      codexHome,
+      "archived_sessions",
+      `noise-${String(index).padStart(2, "0")}.jsonl`
+    );
+    writeJsonl(noisePath, [
+      {
+        timestamp: "2026-03-13T03:00:00.000Z",
+        type: "session_meta",
+        payload: {
+          id: `noise-thread-${index}`,
+          model_provider: "openai",
+        },
+      },
+      {
+        timestamp: "2026-03-13T03:00:01.000Z",
+        type: "turn_context",
+        payload: {
+          turn_id: `noise-turn-${index}`,
+          model: "gpt-5.3-codex-spark",
+        },
+      },
+    ]);
+    setFileMtime(noisePath, `2026-03-13T03:${String(index).padStart(2, "0")}:00.000Z`);
+  }
+
+  const snapshot = await loadSnapshot({
+    codexHome,
+    recentThreadsLimit: null,
+    loadOpenClawUsageFn: async () => null,
+  });
+
+  const recentThreadModels = new Map(
+    snapshot.recentThreads.map((row) => [row.id, row.modelName])
+  );
+
+  assert.equal(recentThreadModels.get("thread-target-1"), "gpt-5.3-codex");
+  assert.equal(recentThreadModels.get("thread-target-2"), "gpt-5.4");
+});
+
 test("loadSnapshot derives session status from latest lifecycle event", async () => {
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "codex-status-"));
   const codexHome = path.join(tempDir, ".codex");
@@ -292,8 +387,8 @@ test("classifyUsageOrigin marks openclaw workspaces separately from local codex 
     classifyUsageOrigin({ cwd: "/Users/helena/.openclaw/workspace", source: "vscode" }),
     {
       kind: "openclaw-oauth",
-      label: "OpenClaw / OAuth",
-      description: "通过 OpenClaw 工作区触发，底层仍消耗 Codex token",
+      label: "小龙虾主脑",
+      description: "来自 CodeX OS / 小龙虾主脑的 Codex 开销",
     }
   );
 
@@ -301,8 +396,21 @@ test("classifyUsageOrigin marks openclaw workspaces separately from local codex 
     classifyUsageOrigin({ cwd: "/Users/helena/Cursor/codex_token", source: "cli" }),
     {
       kind: "codex-local",
-      label: "Codex 本地",
-      description: "直接来自 ~/.codex 的本地线程与会话日志",
+      label: "Codex 编程",
+      description: "直接来自本地 Codex 会话与限额快照",
+    }
+  );
+
+  assert.deepEqual(
+    classifyUsageOrigin({
+      cwd: "/Users/helena/Cursor/codex_token",
+      source: "vscode",
+      modelName: "gpt-5.4",
+    }),
+    {
+      kind: "codex-local",
+      label: "Codex 编程",
+      description: "直接来自本地 Codex 会话与限额快照",
     }
   );
 });

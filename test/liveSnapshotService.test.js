@@ -86,3 +86,32 @@ test("full refresh can use a separate async loader", async () => {
   assert.deepEqual(calls, ["fast", "full-bg"]);
   assert.equal(service.getCurrentSnapshot().overview.totalThreads, 3);
 });
+
+test("concurrent refresh calls reuse one in-flight background snapshot and release after completion", async () => {
+  const calls = [];
+  let resolveBackground;
+  const backgroundPromise = new Promise((resolve) => {
+    resolveBackground = resolve;
+  });
+  const service = createLiveSnapshotService({
+    codexHome: "/tmp/.codex",
+    refreshIntervalMs: 10_000,
+    loadSnapshotFn: async () => createSnapshot("fast"),
+    loadSnapshotInBackgroundFn: async () => {
+      calls.push("full-bg");
+      return backgroundPromise;
+    },
+  });
+
+  const refreshOne = service.refresh();
+  const refreshTwo = service.refresh();
+
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  assert.deepEqual(calls, ["full-bg"]);
+
+  resolveBackground(createSnapshot("full"));
+  await Promise.all([refreshOne, refreshTwo]);
+
+  await service.refresh();
+  assert.deepEqual(calls, ["full-bg", "full-bg"]);
+});

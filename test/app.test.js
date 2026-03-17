@@ -6,6 +6,7 @@ const path = require("node:path");
 const { execFileSync } = require("node:child_process");
 
 const { createAppServer } = require("../server/app");
+const { buildUploadedSnapshot } = require("../server/lib/remoteSnapshot");
 
 function createFixtureCodexHome() {
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "codex-http-"));
@@ -243,6 +244,124 @@ test("snapshot endpoint returns normalized JSON and stream endpoint exposes SSE"
     assert.equal(streamResponse.status, 200);
     assert.match(streamResponse.headers.get("content-type"), /text\/event-stream/);
     streamResponse.body.cancel();
+  } finally {
+    await new Promise((resolve, reject) => server.close((error) => (error ? reject(error) : resolve())));
+  }
+});
+
+test("remote snapshot mode accepts token-protected uploads and serves uploaded snapshots", async (t) => {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "codex-remote-http-"));
+  const remoteSnapshotFilePath = path.join(tempDir, "remote-snapshot.json");
+  const server = createAppServer({
+    remoteSnapshotFilePath,
+    snapshotUploadToken: "secret-token",
+  });
+
+  const listenError = await new Promise((resolve) => {
+    const handleError = (error) => {
+      server.off("listening", handleListening);
+      resolve(error);
+    };
+    const handleListening = () => {
+      server.off("error", handleError);
+      resolve(null);
+    };
+
+    server.once("error", handleError);
+    server.once("listening", handleListening);
+    server.listen(0, "127.0.0.1");
+  });
+
+  if (listenError?.code === "EPERM") {
+    t.skip("sandbox blocks binding local test port (listen EPERM)");
+    return;
+  }
+
+  if (listenError) {
+    throw listenError;
+  }
+
+  const { port } = server.address();
+  const uploadedSnapshot = buildUploadedSnapshot({
+    generatedAt: "2026-03-17T13:30:00.000Z",
+    overview: {
+      totalThreads: 2,
+      totalTokens: 999,
+      latestUpdatedAt: 1773754200,
+      totalEstimatedCost: 1.25,
+    },
+    live: {
+      currentSession: {
+        threadId: "thread-remote",
+        modelName: "gpt-5.4",
+        title: "remote session",
+        titlePreview: "remote session",
+      },
+      rateLimits: {
+        planType: "pro",
+      },
+    },
+    recentThreads: [
+      {
+        id: "thread-remote",
+        title: "remote session",
+        titlePreview: "remote session",
+        workspaceLabel: "codex_token",
+        usageOrigin: "codex-local",
+        usageOriginLabel: "Codex 编程",
+        usageOriginDescription: "直接来自本地 Codex 会话与限额快照",
+        modelName: "gpt-5.4",
+        statusLabel: "进行中",
+        tokensUsed: 999,
+        createdAt: 1773754200,
+        updatedAt: 1773754200,
+        cost: { totalUsd: 1.25 },
+      },
+    ],
+    dailyLedger: [{ day: "2026-03-17", totalTokens: 999, totalUsd: 1.25 }],
+    dailyUsage: [{ day: "2026-03-17", totalThreads: 2, totalTokens: 999 }],
+  });
+
+  try {
+    const beforeUpload = await (await fetch(`http://127.0.0.1:${port}/api/snapshot`)).json();
+    assert.equal(beforeUpload.sources.mode, "remote-upload");
+    assert.equal(beforeUpload.recentThreads.length, 0);
+
+    const unauthorizedResponse = await fetch(`http://127.0.0.1:${port}/api/upload-snapshot`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+      },
+      body: JSON.stringify(uploadedSnapshot),
+    });
+    assert.equal(unauthorizedResponse.status, 401);
+
+    const sourceResponse = await fetch(`http://127.0.0.1:${port}/api/source`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ codexHome: "/tmp/anything" }),
+    });
+    assert.equal(sourceResponse.status, 400);
+
+    const uploadResponse = await fetch(`http://127.0.0.1:${port}/api/upload-snapshot`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        authorization: "Bearer secret-token",
+      },
+      body: JSON.stringify(uploadedSnapshot),
+    });
+    assert.equal(uploadResponse.status, 200);
+
+    const snapshot = await (await fetch(`http://127.0.0.1:${port}/api/snapshot`)).json();
+    assert.equal(snapshot.loading, false);
+    assert.equal(snapshot.overview.totalTokens, 999);
+    assert.equal(snapshot.recentThreads.length, 1);
+    assert.equal(snapshot.recentThreads[0].modelName, "gpt-5.4");
+    assert.equal(snapshot.sources.mode, "remote-upload");
+    assert.equal(snapshot.sources.codexHome, "remote-upload");
   } finally {
     await new Promise((resolve, reject) => server.close((error) => (error ? reject(error) : resolve())));
   }

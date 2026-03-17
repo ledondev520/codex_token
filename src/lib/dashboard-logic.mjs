@@ -73,25 +73,49 @@ export function formatModelLabel(modelName) {
   }
 
   const normalized = String(modelName).toLowerCase().trim();
-  
-  // Specific variants for 5.3 -> GPT-5.3 Codex
-  if (normalized === "gpt-5.3-codex" || normalized === "gpt5.3-codex" || normalized === "gpt-5.3" || normalized === "gpt5.3") {
-    return "GPT-5.3 Codex";
+
+  const exactLabels = {
+    "gpt-5": "GPT-5",
+    "gpt5": "GPT-5",
+    "gpt-5-mini": "GPT-5 Mini",
+    "gpt-5-nano": "GPT-5 Nano",
+    "gpt-5-pro": "GPT-5 Pro",
+    "gpt-5.4": "GPT-5.4",
+    "gpt5.4": "GPT-5.4",
+    "gpt-5.4-codex": "GPT-5.4",
+    "gpt5.4-codex": "GPT-5.4",
+    "gpt-5.3": "GPT-5.3",
+    "gpt5.3": "GPT-5.3",
+    "gpt-5.3-codex": "GPT-5.3 Codex",
+    "gpt5.3-codex": "GPT-5.3 Codex",
+    "gpt-5.3-codex-spark": "GPT-5.3 Codex Spark",
+    "gpt-5.2": "GPT-5.2",
+    "gpt-5.2-codex": "GPT-5.2 Codex",
+    "gpt-5.1": "GPT-5.1",
+    "gpt-5.1-codex": "GPT-5.1 Codex",
+    "gpt-5.1-codex-mini": "GPT-5.1 Codex Mini",
+    "gpt-5.1-codex-max": "GPT-5.1 Codex Max",
+  };
+
+  if (exactLabels[normalized]) {
+    return exactLabels[normalized];
   }
 
-  // Specific variants for 5.4 -> GPT-5.4
-  if (normalized === "gpt-5.4" || normalized === "gpt5.4" || normalized === "gpt-5.4-codex" || normalized === "gpt5.4-codex") {
-    return "GPT-5.4";
-  }
-
-  // Generic matcher for other gpt-5.x variants
-  const regex = /^gpt-?5?\.?(\d+)(-codex)?$/;
-  const match = normalized.match(regex);
+  const match = normalized.match(/^gpt-5(?:\.(\d+))?(?:-(mini|nano|pro|codex))?(?:-(spark|max))?$/);
   if (match) {
-    const version = match[1];
-    if (version === "3") return "GPT-5.3 Codex";
-    if (version === "4") return "GPT-5.4";
-    return `GPT-5.${version} Codex`;
+    const [, minor, variant, trailingVariant] = match;
+    const base = minor ? `GPT-5.${minor}` : "GPT-5";
+    const parts = [base];
+
+    if (variant) {
+      parts.push(variant.charAt(0).toUpperCase() + variant.slice(1));
+    }
+
+    if (trailingVariant) {
+      parts.push(trailingVariant.charAt(0).toUpperCase() + trailingVariant.slice(1));
+    }
+
+    return parts.join(" ");
   }
 
   return String(modelName);

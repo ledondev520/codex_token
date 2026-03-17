@@ -166,7 +166,8 @@ test("stale rate-limit snapshots are detected after the reset time passes", () =
 
 test("gpt-5.4 codex alias is rendered as GPT-5.4", () => {
   assert.equal(logic.formatModelLabel("gpt-5.4-codex"), "GPT-5.4");
-  assert.equal(logic.formatModelLabel("gpt-5.1-codex"), "gpt-5.1-codex");
+  assert.equal(logic.formatModelLabel("gpt-5.1-codex"), "GPT-5.1 Codex");
+  assert.equal(logic.formatModelLabel("gpt-5"), "GPT-5");
 });
 
 test("billing scope and range helpers support natural month and visible slices", () => {
@@ -424,8 +425,8 @@ test("openclaw model table markup renders model costs and fallback source state"
   ]);
 
   assert.match(markup, /<table/);
-  assert.match(markup, /<td>gpt-5<\/td>/);
-  assert.match(markup, /gpt-5\.3-codex/);
+  assert.match(markup, /<td>GPT-5<\/td>/);
+  assert.match(markup, /GPT-5\.3 Codex/);
   assert.match(markup, /\$24\.52/);
   assert.match(markup, /模型/);
 
@@ -611,18 +612,21 @@ test("prompt summaries collapse whitespace and trim long prompts", () => {
 });
 
 test("dashboard html exposes the current dual-ledger shell structure", () => {
-  const appSource = fs.readFileSync(path.join(__dirname, "..", "src", "App.jsx"), "utf8");
+  const dashboardSource = fs.readFileSync(
+    path.join(__dirname, "..", "src", "components", "dashboard", "CodexDashboard.jsx"),
+    "utf8"
+  );
 
-  assert.match(appSource, /我直接使用 Codex/);
-  assert.match(appSource, /小龙虾代用/);
-  assert.match(appSource, /高级明细/);
-  assert.match(appSource, /全部会话/);
-  assert.match(appSource, /账单分析/);
-  assert.match(appSource, /SectionCard/);
-  assert.match(appSource, /TabsTrigger/);
-  assert.match(appSource, /EmptyState/);
-  assert.match(appSource, /Label/);
-  assert.doesNotMatch(appSource, /OpenClaw \/ OAuth 经 Codex/);
+  assert.match(dashboardSource, /双账本总览/);
+  assert.match(dashboardSource, /Codex 编程/);
+  assert.match(dashboardSource, /小龙虾主脑/);
+  assert.match(dashboardSource, /高级明细/);
+  assert.match(dashboardSource, /全部会话/);
+  assert.match(dashboardSource, /全部账单/);
+  assert.match(dashboardSource, /SectionCard/);
+  assert.match(dashboardSource, /TabsTrigger/);
+  assert.match(dashboardSource, /Label/);
+  assert.doesNotMatch(dashboardSource, /OpenClaw \/ OAuth 经 Codex/);
 });
 
 test("dashboard ui primitives avoid hard-coded slate palette classes", () => {
@@ -646,24 +650,32 @@ test("dashboard ui primitives avoid hard-coded slate palette classes", () => {
 
 test("dashboard source includes a local password gate and relock control", () => {
   const appSource = fs.readFileSync(path.join(__dirname, "..", "src", "App.jsx"), "utf8");
+  const accessGateSource = fs.readFileSync(
+    path.join(__dirname, "..", "src", "components", "dashboard", "AccessGate.jsx"),
+    "utf8"
+  );
+  const storageSource = fs.readFileSync(path.join(__dirname, "..", "src", "lib", "storage.js"), "utf8");
 
-  assert.match(appSource, /970520/);
-  assert.match(appSource, /localStorage/);
-  assert.match(appSource, /访问密码/);
+  assert.match(storageSource, /970520/);
+  assert.match(storageSource, /localStorage/);
+  assert.match(accessGateSource, /访问密码/);
   assert.match(appSource, /重新锁定|退出授权/);
 });
 
 test("dashboard source uses dual ledgers and hides secondary controls behind advanced details", () => {
-  const appSource = fs.readFileSync(path.join(__dirname, "..", "src", "App.jsx"), "utf8");
+  const dashboardSource = fs.readFileSync(
+    path.join(__dirname, "..", "src", "components", "dashboard", "CodexDashboard.jsx"),
+    "utf8"
+  );
 
-  assert.match(appSource, /高级明细/);
-  assert.match(appSource, /AccordionTrigger/);
-  assert.match(appSource, /数据源说明/);
-  assert.match(appSource, /告警设置/);
-  assert.match(appSource, /成本排行/);
-  assert.match(appSource, /限额细节/);
-  assert.match(appSource, /模型价格/);
-  assert.match(appSource, /账单分析/);
+  assert.match(dashboardSource, /高级明细/);
+  assert.match(dashboardSource, /AccordionTrigger/);
+  assert.match(dashboardSource, /数据源说明/);
+  assert.match(dashboardSource, /本地阈值告警设置/);
+  assert.match(dashboardSource, /排行榜与运营决策分析/);
+  assert.match(dashboardSource, /限额重置进度与详情/);
+  assert.match(dashboardSource, /API 模型缓存折算参考价格/);
+  assert.match(dashboardSource, /全部账单/);
 });
 
 test("dashboard source removes default-visible favorite export and multi-view controls from the main reading flow", () => {
@@ -678,44 +690,71 @@ test("dashboard source removes default-visible favorite export and multi-view co
 });
 
 test("dashboard source includes alert controls and metric explanation hover copy", () => {
-  const appSource = fs.readFileSync(path.join(__dirname, "..", "src", "App.jsx"), "utf8");
+  const alertSource = fs.readFileSync(
+    path.join(__dirname, "..", "src", "components", "dashboard", "AlertSettings.jsx"),
+    "utf8"
+  );
+  const metricSource = fs.readFileSync(
+    path.join(__dirname, "..", "src", "components", "dashboard", "metric-tile.jsx"),
+    "utf8"
+  );
 
-  assert.match(appSource, /日花费阈值/);
-  assert.match(appSource, /失败率阈值/);
-  assert.match(appSource, /告警设置/);
-  assert.match(appSource, /口径说明/);
+  assert.match(alertSource, /日花费阈值/);
+  assert.match(alertSource, /失败率阈值/);
+  assert.match(alertSource, /配置与规则/);
+  assert.match(metricSource, /口径说明/);
 });
 
 test("dashboard source keeps secondary decision insights only inside advanced details", () => {
-  const appSource = fs.readFileSync(path.join(__dirname, "..", "src", "App.jsx"), "utf8");
+  const dashboardSource = fs.readFileSync(
+    path.join(__dirname, "..", "src", "components", "dashboard", "CodexDashboard.jsx"),
+    "utf8"
+  );
+  const decisionSource = fs.readFileSync(
+    path.join(__dirname, "..", "src", "components", "dashboard", "DecisionComponents.jsx"),
+    "utf8"
+  );
 
-  assert.match(appSource, /成本排行/);
-  assert.match(appSource, /Top 项目成本排行（今日\/7天）/);
-  assert.match(appSource, /Top 模型成本排行（今日\/7天）/);
-  assert.match(appSource, /单位效率指标/);
-  assert.match(appSource, /失败任务概览/);
-  assert.match(appSource, /查看详情|详情不可用/);
+  assert.match(dashboardSource, /排行榜与运营决策分析/);
+  assert.match(dashboardSource, /项目仓库花费排行/);
+  assert.match(dashboardSource, /API 模型花费排行/);
+  assert.match(decisionSource, /单位效率指标/);
+  assert.match(decisionSource, /失败任务概览/);
+  assert.match(decisionSource, /查看详情|不可用/);
 });
 
 test("homepage keeps two ledgers as the only primary summary surfaces", () => {
-  const appSource = fs.readFileSync(path.join(__dirname, "..", "src", "App.jsx"), "utf8");
+  const dashboardSource = fs.readFileSync(
+    path.join(__dirname, "..", "src", "components", "dashboard", "CodexDashboard.jsx"),
+    "utf8"
+  );
 
-  assert.match(appSource, /我直接使用 Codex/);
-  assert.match(appSource, /小龙虾代用/);
-  assert.match(appSource, /今日费用/);
-  assert.match(appSource, /近 7 天费用/);
-  assert.match(appSource, /近 7 天 Token/);
-  assert.match(appSource, /当前活跃/);
-  assert.match(appSource, /双账本总览/);
+  assert.match(dashboardSource, /Codex 编程/);
+  assert.match(dashboardSource, /小龙虾主脑/);
+  assert.match(dashboardSource, /今日费用/);
+  assert.match(dashboardSource, /近 7 天费用/);
+  assert.match(dashboardSource, /近 7 天 Token/);
+  assert.match(dashboardSource, /当前活跃/);
+  assert.match(dashboardSource, /双账本总览/);
 });
 
 test("homepage source includes clickable runtime sessions and removes ambiguous status labels", () => {
-  const appSource = fs.readFileSync(path.join(__dirname, "..", "src", "App.jsx"), "utf8");
+  const dashboardSource = fs.readFileSync(
+    path.join(__dirname, "..", "src", "components", "dashboard", "CodexDashboard.jsx"),
+    "utf8"
+  );
+  const runtimeSource = fs.readFileSync(
+    path.join(__dirname, "..", "src", "components", "dashboard", "RunningSessionStrip.jsx"),
+    "utf8"
+  );
+  const sessionDialogSource = fs.readFileSync(
+    path.join(__dirname, "..", "src", "components", "dashboard", "SessionDetailDialog.jsx"),
+    "utf8"
+  );
 
-  assert.match(appSource, /onOpenThread/);
-  assert.match(appSource, /handleOpenThread/);
-  assert.match(appSource, /运行中会话/);
-  assert.match(appSource, /会话详情/);
-  assert.doesNotMatch(appSource, /异常 异常/);
-  assert.doesNotMatch(appSource, /OpenClaw \/ OAuth 经 Codex/);
+  assert.match(dashboardSource, /handleOpenThread/);
+  assert.match(runtimeSource, /运行中会话/);
+  assert.match(sessionDialogSource, /会话详情/);
+  assert.doesNotMatch(dashboardSource, /异常 异常/);
+  assert.doesNotMatch(dashboardSource, /OpenClaw \/ OAuth 经 Codex/);
 });

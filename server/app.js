@@ -3,6 +3,7 @@ const path = require("node:path");
 const http = require("node:http");
 
 const { createLiveSnapshotService } = require("./lib/liveSnapshotService");
+const { createRemoteSnapshotService } = require("./lib/remoteSnapshot");
 const { resolveCodexHome, resolveSelectableCodexHome } = require("./lib/codexPaths");
 
 const MIME_TYPES = {
@@ -121,7 +122,12 @@ function readJsonBody(request) {
 
 function createAppServer(options = {}) {
   const publicDir = options.publicDir || path.join(process.cwd(), "public");
-  const liveSnapshotService = createLiveSnapshotService(options);
+  const isRemoteSnapshotMode = Boolean(options.remoteSnapshotFilePath);
+  const liveSnapshotService = isRemoteSnapshotMode
+    ? createRemoteSnapshotService({
+        snapshotFilePath: options.remoteSnapshotFilePath,
+      })
+    : createLiveSnapshotService(options);
   liveSnapshotService.primeSnapshots();
 
   return http.createServer(async (request, response) => {
@@ -174,6 +180,11 @@ function createAppServer(options = {}) {
     }
 
     if (request.method === "POST" && url.pathname === "/api/source") {
+      if (isRemoteSnapshotMode) {
+        sendJson(response, 400, { error: "远端快照模式不支持切换本地数据目录。" });
+        return;
+      }
+
       try {
         const payload = await readJsonBody(request);
         const nextCodexHome = payload?.codexHome
@@ -181,6 +192,46 @@ function createAppServer(options = {}) {
           : resolveCodexHome();
         const snapshot = await liveSnapshotService.setCodexHome(nextCodexHome);
         sendJson(response, 200, snapshot);
+      } catch (error) {
+        sendJson(response, 400, { error: error.message });
+      }
+      return;
+    }
+
+    if (request.method === "POST" && url.pathname === "/api/upload-snapshot") {
+      if (!isRemoteSnapshotMode) {
+        sendNotFound(response);
+        return;
+      }
+
+      const expectedToken = String(options.snapshotUploadToken || "").trim();
+      const authorizationHeader = String(request.headers.authorization || "").trim();
+      const providedToken = authorizationHeader.startsWith("Bearer ")
+        ? authorizationHeader.slice("Bearer ".length).trim()
+        : String(request.headers["x-snapshot-upload-token"] || "").trim();
+
+      if (!expectedToken || providedToken !== expectedToken) {
+        sendJson(response, 401, { error: "未授权的快照上传请求。" });
+        return;
+      }
+
+      try {
+        const payload = await readJsonBody(request);
+        const snapshot = payload?.snapshot && typeof payload.snapshot === "object"
+          ? payload.snapshot
+          : payload;
+        if (!snapshot || typeof snapshot !== "object") {
+          throw new Error("上传内容缺少有效快照。");
+        }
+
+        const savedSnapshot = await liveSnapshotService.setUploadedSnapshot(snapshot);
+        sendJson(response, 200, {
+          ok: true,
+          generatedAt: savedSnapshot.generatedAt,
+          recentThreads: Array.isArray(savedSnapshot.recentThreads)
+            ? savedSnapshot.recentThreads.length
+            : 0,
+        });
       } catch (error) {
         sendJson(response, 400, { error: error.message });
       }

@@ -1,6 +1,6 @@
 # Codex Usage Dashboard Plan
 
-Last updated: 2026-03-14 14:41 Asia/Shanghai
+Last updated: 2026-03-17 21:25 Asia/Shanghai
 
 ## Goal
 
@@ -52,6 +52,8 @@ Build a standalone local web dashboard in this workspace that reads `~/.codex` u
 42. Remove duplicated quota-window rendering and turn the lower section into supplemental quota/session detail. Completed.
 43. Refactor the entire Codex dashboard framework so repeated summary sections collapse into one dense operations summary with accordion-based secondary details. Completed.
 44. Rebuild the Codex dashboard into a user-facing dual-ledger view aligned with the openclaw-control-center mental model. Completed.
+45. Fix all-session model backfill, remove debug residue, and realign regression coverage with the current dashboard shell. Completed.
+46. Add a VPS-persistent remote snapshot mode so the public site can serve the last uploaded local Codex snapshot without depending on a live reverse tunnel. Completed.
 
 ## Architecture
 
@@ -131,3 +133,9 @@ Build a standalone local web dashboard in this workspace that reads `~/.codex` u
 - The lower `限制窗口` section has been replaced by `限额补充信息`: duplicated 5h/7d usage cards were removed, reset-rhythm details were consolidated into one supplemental card, and dead homepage overview code was deleted.
 - The Codex main panel has now been fully regrouped into `运行概览 + 运营摘要 + 全部会话与账单`: repeated top-level sections were removed, while `数据源 / 告警设置 / 成本排行 / 限额细节` moved into shadcn `Accordion` detail groups.
 - The main panel has now been reoriented again around the openclaw-control-center mental model: two user-facing ledgers (`我直接使用 Codex` / `小龙虾代用`), a ledger-scoped `全部会话` workbench, and a default-collapsed `高级明细` area.
+- The all-session ledger now backfills models by scanning session JSONL for the actual recent thread IDs rather than truncating to the newest 40 files, so listed Codex threads no longer degrade to `未知模型` just because unrelated session files are newer.
+- Usage-origin classification now relies on stable source signals (`cwd`, `source`) instead of model names, so local GPT-5 sessions stay in `Codex 编程` instead of being misrouted into the lobster ledger.
+- Model labels now use explicit GPT-5 / Codex alias rules, eliminating the bad `gpt-5` → `GPT-5.5 Codex` formatting path and keeping `gpt-5.4-codex` grouped under `GPT-5.4`.
+- Temporary snapshot tracing and the sticky red debug strip were removed, and the regression suite now asserts against the current component layout/copy instead of stale pre-refactor source strings.
+- The local 4329 dashboard runtime no longer blocks startup on a redundant rebuild when fresh assets already exist, and background full-refresh now tolerates large snapshots plus prevents overlapping worker pile-ups that previously left the UI stuck on `loading=true` with empty models.
+- The server now supports a file-backed `remote-upload` mode plus a token-protected snapshot upload endpoint, and the local workspace now includes a push script that can generate a privacy-reduced snapshot directly from `.codex` without requiring the local 4329 dashboard process to stay online.

@@ -11,8 +11,14 @@ function loadSnapshotInBackground(options = {}) {
       [workerPath, serializedOptions],
       {
         cwd: path.join(__dirname, "..", ".."),
-        timeout: 30000,
-        maxBuffer: 20 * 1024 * 1024,
+        // Full snapshots can take longer on large local histories, especially
+        // when recentThreads include prompt history and decision windows scan
+        // multiple days of session JSONL.
+        timeout: 120000,
+        // Real snapshots can be large once recentThreads include prompt history.
+        // Keep the background worker path reliable instead of silently failing
+        // back to the "loading" placeholder snapshot.
+        maxBuffer: 200 * 1024 * 1024,
       },
       (error, stdout, stderr) => {
         if (error) {

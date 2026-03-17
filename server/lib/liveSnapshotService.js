@@ -65,19 +65,31 @@ function createLiveSnapshotService(options = {}) {
   }
 
   async function refresh(generation = snapshotGeneration) {
-    latestSnapshotPromise = loadSnapshotInBackgroundFn({
-      ...runtimeOptions,
-      recentSessionFileLimit: runtimeOptions.recentSessionFileLimit || 40,
-      ledgerFileLimit: runtimeOptions.ledgerFileLimit || 217,
-    });
-    const snapshot = await latestSnapshotPromise;
-    if (generation !== snapshotGeneration) {
-      return latestSnapshot;
+    if (latestSnapshotPromise) {
+      return latestSnapshotPromise;
     }
 
-    latestSnapshot = { ...snapshot, loading: false };
-    emitSnapshot(latestSnapshot);
-    return latestSnapshot;
+    latestSnapshotPromise = (async () => {
+      const snapshot = await loadSnapshotInBackgroundFn({
+        ...runtimeOptions,
+        recentSessionFileLimit: runtimeOptions.recentSessionFileLimit || 40,
+        ledgerFileLimit: runtimeOptions.ledgerFileLimit || 217,
+      });
+      if (generation !== snapshotGeneration) {
+        return latestSnapshot;
+      }
+
+      latestSnapshot = { ...snapshot, loading: false };
+      emitSnapshot(latestSnapshot);
+      return latestSnapshot;
+    })();
+
+    try {
+      return await latestSnapshotPromise;
+    } finally {
+      latestSnapshotPromise = null;
+      fullRefreshScheduled = false;
+    }
   }
 
   function scheduleBackgroundRefresh(generation = snapshotGeneration) {
