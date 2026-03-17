@@ -523,7 +523,7 @@ export function CodexDashboard({
                       <CardContent className="space-y-3 p-5">
                         <Label className="uppercase tracking-[0.15em] text-[11px] text-muted-foreground font-semibold">小龙虾主脑</Label>
                         <div className="text-xl font-bold tracking-tight text-foreground">CodeX OS / 小龙虾主脑</div>
-                        <p className="text-[13px] leading-relaxed text-muted-foreground">聚合 <code className="bg-muted px-1.5 py-0.5 rounded font-mono text-[11px] border shadow-sm">~/.openclaw/agents/main/sessions</code> 主脑会话 usage，以及主脑继续调用 Codex 的账单。</p>
+                        <p className="text-[13px] leading-relaxed text-muted-foreground">优先聚合 <code className="bg-muted px-1.5 py-0.5 rounded font-mono text-[11px] border shadow-sm">~/.openclaw/data/interaction-store*.db</code> 的 token 统计；若本机缺库，则回退到 <code className="bg-muted px-1.5 py-0.5 rounded font-mono text-[11px] border shadow-sm">agents/main/sessions</code>，再叠加主脑继续调用 Codex 的账单。</p>
                       </CardContent>
                     </Card>
                   </div>

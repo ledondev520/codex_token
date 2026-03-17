@@ -1,6 +1,6 @@
 # Codex Usage Dashboard Plan
 
-Last updated: 2026-03-17 22:48 Asia/Shanghai
+Last updated: 2026-03-17 23:07 Asia/Shanghai
 
 ## Goal
 
@@ -56,6 +56,7 @@ Build a standalone local web dashboard in this workspace that reads `~/.codex` u
 46. Add a VPS-persistent remote snapshot mode so the public site can serve the last uploaded local Codex snapshot without depending on a live reverse tunnel. Completed.
 47. Backfill OpenClaw classification for archived JSONL sessions when thread metadata is incomplete by consuming `session_meta.cwd/source` directly in the same ledger aggregation path. Completed.
 48. Fold OpenClaw main-brain session usage into the lobster ledger so Feishu/main-agent prompts are counted alongside delegated Codex usage without double-counting overlapping Codex rows. Completed.
+49. Add `interaction-store*.db` as the preferred OpenClaw main-brain token source so the dashboard can still show token usage even when session files are missing. Completed.
 
 ## Architecture
 
@@ -67,6 +68,7 @@ Build a standalone local web dashboard in this workspace that reads `~/.codex` u
 - `~/.codex/archived_sessions/**/*.jsonl`
 - `codexbar cost --provider codex --format json` for OpenClaw / ChatGPT-related usage
 - `~/.openclaw/agents/main/sessions/sessions.json` + referenced `*.jsonl` files for OpenClaw main-brain assistant-message usage
+- `~/.openclaw/data/interaction-store*.db` as the preferred raw OpenClaw model-call token ledger when present
 - Pricing: official OpenAI model pricing where an exact match exists, with explicit alias-based fallback for models such as `gpt-5.3-codex-spark`.
 
 ## Risks
@@ -76,6 +78,7 @@ Build a standalone local web dashboard in this workspace that reads `~/.codex` u
 - Live filesystem watching may behave differently across platforms; polling fallback is required.
 - External `codexbar` calls can fail or hang, so OpenClaw usage must not block the main Codex snapshot path.
 - The originally documented `~/.openclaw/data/interaction-store.db` source may not exist on the local machine, so the main-brain ledger cannot depend on that path being present.
+- The interaction-store schema may exist only on some machines or months, so the dashboard must support archive files and fall back to session-derived usage when the DB is absent.
 - The homepage now risks regressing into low-density hero sections if new summary widgets are added without first-screen budgeting.
 - Compacting the homepage too aggressively can hide session readability or push required data below the fold on shorter laptop screens.
 - Removing repeated quota cards from lower sections can hide detail users previously scanned there if the replacement does not preserve unique secondary information.
@@ -91,6 +94,7 @@ Build a standalone local web dashboard in this workspace that reads `~/.codex` u
 - Merge per-thread token/model/limit fields by timestamp so newer partial files do not wipe older non-null snapshots.
 - Cache OpenClaw usage reads and degrade to `null` when `codexbar` is unavailable so the rest of the dashboard stays live.
 - Treat OpenClaw main sessions as a separate local segment sourced from `agents/main/sessions/*.jsonl`, then merge them with CodexBar/local Codex rows using `sum(main) + max(codex overlap)` so the lobster ledger gains Feishu prompt cost without duplicate delegated Codex billing.
+- Prefer `interaction-store*.db` for raw token totals because it does not require surviving session files; when the DB is unavailable, keep the existing session-usage fallback so the lobster ledger remains non-empty.
 - Keep the dashboard bound to loopback on the Mac and expose phone access through a reverse SSH tunnel terminated by the VPS reverse proxy.
 - Keep a clear record when public-access protections are relaxed so the exposure level is obvious on resume.
 - Keep the first-screen quota cards as the single source for used/remaining/ETA, and reserve lower sections for reset rhythm, session billing, and navigation-only details.
@@ -146,3 +150,4 @@ Build a standalone local web dashboard in this workspace that reads `~/.codex` u
 - The server now supports a file-backed `remote-upload` mode plus a token-protected snapshot upload endpoint, and the local workspace now includes a push script that can generate a privacy-reduced snapshot directly from `.codex` without requiring the local 4329 dashboard process to stay online.
 - 归档会话 `session_meta` 的 `cwd/source` 现在也会参与 OpenClaw 来源判定的回退路径：即使 `threads` 表映射缺失，归档文件里来自 `~/.openclaw` 的会话仍可进入 `小龙虾代用` 账本。
 - `小龙虾代用` 账本现在不再只看 Codex 代跑：OpenClaw `agent:main:*` 会话中的 assistant `usage` 也会被汇入同一账本，因此飞书直发到小龙虾主脑的提示词消耗能够直接显示出来。
+- `小龙虾代用` 账本现在优先读取 OpenClaw 的 `interaction-store*.db` 原始 token 统计；即使缺失 session 文件，也能直接显示主脑对话消耗的 token，总账仍继续叠加主脑调用 Codex 的费用。

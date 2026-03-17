@@ -87,6 +87,26 @@ function resolveOpenClawSessionsIndexPath(options = {}) {
   return path.join(os.homedir(), ".openclaw", "agents", "main", "sessions", "sessions.json");
 }
 
+function resolveInteractionStoreDbPaths(options = {}) {
+  if (Array.isArray(options.interactionStoreDbPaths) && options.interactionStoreDbPaths.length) {
+    return options.interactionStoreDbPaths.map((value) => String(value));
+  }
+
+  const dataDir = path.join(os.homedir(), ".openclaw", "data");
+  if (!fs.existsSync(dataDir)) {
+    return [];
+  }
+
+  const names = fs
+    .readdirSync(dataDir, { withFileTypes: true })
+    .filter((entry) => entry.isFile())
+    .map((entry) => entry.name)
+    .filter((name) => /^interaction-store(?:-archive-\d{4}-\d{2})?\.db$/i.test(name))
+    .sort();
+
+  return names.map((name) => path.join(dataDir, name));
+}
+
 function getLocalDayKey(value, timeZone) {
   if (!value) {
     return null;
@@ -242,6 +262,118 @@ function isMainBrainSession(sessionKey, entry) {
     String(sessionKey || "").startsWith("agent:main:") &&
     Boolean(entry?.sessionFile)
   );
+}
+
+function runInteractionStoreQuery(dbPath, query) {
+  if (!dbPath || !fs.existsSync(dbPath)) {
+    return [];
+  }
+
+  try {
+    const stdout = execFileSync("sqlite3", ["-json", dbPath, query], {
+      encoding: "utf8",
+      timeout: 8000,
+      maxBuffer: 20 * 1024 * 1024,
+    }).trim();
+
+    return stdout ? JSON.parse(stdout) : [];
+  } catch {
+    return [];
+  }
+}
+
+async function loadInteractionStoreUsageSnapshot(options = {}) {
+  const dbPaths = resolveInteractionStoreDbPaths(options);
+  if (!dbPaths.length) {
+    return null;
+  }
+
+  const timeZone = options.timeZone || Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const rowsByDay = new Map();
+  let latestUsageRow = null;
+
+  for (const dbPath of dbPaths) {
+    const rows = runInteractionStoreQuery(
+      dbPath,
+      `
+        SELECT
+          timestamp,
+          provider,
+          model,
+          caller,
+          input_tokens,
+          output_tokens,
+          cost_estimate,
+          ok
+        FROM llm_calls
+        ORDER BY timestamp ASC;
+      `
+    );
+
+    for (const row of rows) {
+      const inputTokens = Number(row.input_tokens || 0);
+      const outputTokens = Number(row.output_tokens || 0);
+      const totalUsd = Number(row.cost_estimate || 0);
+      const totalTokens = inputTokens + outputTokens;
+      const day = getLocalDayKey(row.timestamp, timeZone);
+      const modelName = normalizeConfiguredModel(row.model);
+
+      if (!day) {
+        continue;
+      }
+
+      if (totalTokens <= 0 && totalUsd <= 0) {
+        continue;
+      }
+
+      addUsageRow(rowsByDay, {
+        day,
+        timestamp: row.timestamp || null,
+        modelName,
+        totalTokens,
+        inputTokens,
+        outputTokens,
+        cachedInputTokens: 0,
+        totalUsd,
+      });
+
+      const rowMs = row.timestamp ? new Date(row.timestamp).getTime() : 0;
+      const latestMs = latestUsageRow?.timestamp ? new Date(latestUsageRow.timestamp).getTime() : 0;
+      if (!latestUsageRow || rowMs >= latestMs) {
+        latestUsageRow = {
+          timestamp: row.timestamp || null,
+          totalTokens,
+          totalUsd,
+        };
+      }
+    }
+  }
+
+  const dailyRows = finalizeUsageRows(rowsByDay);
+  if (!dailyRows.length) {
+    return null;
+  }
+
+  const totals = summarizeRows(dailyRows);
+  const topModels = buildTopModels(dailyRows);
+
+  return {
+    provider: "openclaw",
+    source: "interaction-store",
+    updatedAt: latestUsageRow?.timestamp || null,
+    configuredModel: null,
+    session: {
+      totalTokens: Number(latestUsageRow?.totalTokens || 0),
+      totalUsd: Number(latestUsageRow?.totalUsd || 0),
+    },
+    totals,
+    daily: dailyRows,
+    topModels,
+    segments: {
+      codexDaily: [],
+      mainDaily: dailyRows,
+    },
+  };
 }
 
 async function loadLocalMainUsageSnapshot(options = {}) {
@@ -540,7 +672,8 @@ async function loadOpenClawUsageSnapshot(options = {}) {
     codexSnapshot = null;
   }
 
-  const mainSnapshot = await loadLocalMainUsageSnapshot(options);
+  const interactionStoreSnapshot = await loadInteractionStoreUsageSnapshot(options);
+  const mainSnapshot = interactionStoreSnapshot || await loadLocalMainUsageSnapshot(options);
   const normalized = mergeOpenClawSnapshots(codexSnapshot, mainSnapshot);
 
   if (!options.disableCache) {
@@ -556,4 +689,5 @@ module.exports = {
   loadOpenClawUsageSnapshot,
   resolveCodexbarBin,
   resolveOpenClawConfiguredModel,
+  resolveInteractionStoreDbPaths,
 };
